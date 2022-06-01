@@ -1,0 +1,35 @@
+---
+title: "palette creation velten"
+author: "Joseba Elizazu"
+date: '2022-04-07'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(openxlsx)
+library(Polychrome)
+velten = read.xlsx("~/Desktop/TFM bioinfo/Velten_projections.xlsx")
+velten$celltype <- factor(velten$celltype)
+n = length(levels(velten$celltype))
+library(Polychrome)
+set.seed(1234)
+firstpal <- createPalette(n, c("#00ffff", "#22F647"), M=1000)
+#firstpal <-  grDevices::colors()[grep('gr(a|e)y', grDevices::colors(), invert = T)]
+
+colors <- sample(firstpal, n)
+pie(rep(1,n), col=colors)
+names(colors) <- levels(velten$celltype)
+df <- data.frame(celltype = names(colors), cols = colors)
+write.xlsx(df, "veltencolors.xlsx")
+
+
+
+
+
+
+```
+

@@ -1,0 +1,1474 @@
+---
+title: "Untitled"
+author: "Joseba Elizazu"
+date: '2022-05-17'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(Seurat)
+library(patchwork)
+library(tidyverse)
+```
+
+```{r}
+importdir <- "./results/integrated/Paired_integrated/"
+results <- "./results/finalAnalysis/"
+dir.create(results)
+aml.combined <- readRDS(paste0(importdir, "Paired_integrated.rds"))
+View(aml.combined@meta.data)
+aml.combined$subgroup <- ifelse(aml.combined$patient == "AML14.15" | aml.combined$patient == "AML9.13", "t(8;21)", "inv(16)")
+aml.combined$condition <- aml.combined$orig.ident
+
+library(openxlsx)
+aml.combined@meta.data$projections <- factor(aml.combined@meta.data$projections)
+cellcolors <- read.xlsx("veltencolors.xlsx")
+rownames(cellcolors) = cellcolors[,1]
+cellcolors <- cellcolors[levels(aml.combined@meta.data$projections),]
+
+colors <- cellcolors$cols
+
+clustercols <- DiscretePalette(length(unique(aml.combined$newcluster)), palette = "polychrome")
+conditioncols <- c("chartreuse3", "purple")
+samplecols <- DiscretePalette(length(unique(aml.combined$sample)))
+patientcols <- DiscretePalette(length(unique(aml.combined$patient)))
+library(RColorBrewer)
+patientcols <- RColorBrewer::brewer.pal(length(unique(aml.combined$patient)), "Set1")
+
+patientclustercol <- DiscretePalette(length(unique(aml.combined$patient_paired_cluster)), palette = "alphabet2")
+sampleclustercol <-  DiscretePalette(length(unique(aml.combined$patient_paired_cluster)), palette = "glasbey")
+aml.combined$cluster_condition <- factor(paste(aml.combined$newcluster, aml.combined$condition, sep = "."))
+names(clustercols) <- unique(aml.combined$newcluster)
+clustercols1 <- clustercols[order(as.character(names(clustercols)))]
+names(clustercols1) <- NULL
+```
+
+```{r}
+pdf(paste0(results, "dimplots.pdf"))
+DimPlot(aml.combined, reduction = "umap", split.by = "condition",  cols = clustercols) + theme(legend.position = "none")
+DimPlot(aml.combined, reduction = "umap", group.by = "projections", cols = colors)+ theme(legend.position = "none")
+DimPlot(aml.combined, reduction = "umap", group.by = "patient", cols = patientcols)
+DimPlot(aml.combined, reduction = "umap", group.by = "condition", cols = conditioncols)
+DimPlot(aml.combined, reduction = "umap", group.by = "patient",)
+DimPlot(aml.combined, reduction = "umap", group.by = "sample", cols = samplecols)
+
+DimPlot(aml.combined, reduction = "umap", group.by = "subgroup",)
+DimPlot(aml.combined, reduction = "umap", cols = clustercols)
+
+DimPlot(aml.combined, reduction = "umap", split.by =  "subgroup", cols = clustercols)
+DimPlot(aml.combined, reduction = "umap", split.by = "condition", group.by = "patient", cols = patientcols)
+DimPlot(aml.combined, reduction = "umap", split.by = "subgroup", group.by = "condition")
+DimPlot(aml.combined, reduction = "umap", split.by = "condition",  cols = clustercols) + theme(legend.position = "none")
+DimPlot(aml.combined, reduction = "umap", split.by = "condition", group.by = "projections", cols = colors)+ theme(legend.position = "none")
+DimPlot(aml.combined, reduction = "umap", group.by = "projections", cols = colors) 
+ DimPlot(aml.combined, reduction = "umap",  label = F,
+                 group.by = "projections", label.size = 2, pt.size = 0.5, cols = colors) +
+  theme(legend.text = element_text(size = 8),
+        #legend.key.size = unit(0, "cm"),
+        legend.key.height = unit(1, "cm"),
+        #legend.position = "none"
+        )
+
+hscs <- colnames(aml.combined)[which(aml.combined$projections == "HSCs & MPPs")]
+DimPlot(aml.combined, reduction = "umap", split.by = "condition", group.by = "projections",  cells.highlight = hscs)
+
+DimPlot(aml.combined, reduction = "umap", split.by = "subgroup", group.by = "condition")
+
+#RidgePlot(aml.combined, features = c("CD34", "CD47", "CD99", "CD9", "CD200", "LYZ", "TIM3"), ncol = 2, group.by = "cluster_condition", cols = rep(clustercols1, each =2))
+
+
+FeaturePlot(aml.combined, features ="TOP2A")
+RidgePlot(aml.combined, features = "TOP2A", ncol = 2, group.by = "cluster_condition", cols = rep(clustercols1, each =2), assay = "SCT")
+
+cycles <- c("TOP2A", "CCNA2","E2F1", "CDC6", "MYBL2", "PCNA", "TFDP1", "CDK1")
+features <- c("BMP3","KCNK12", "VPREB3", "CD24", "EBF1")
+newfeatures <-  c("CXCR4", "ITGB2", "CDH2", "CD44",  "ITGAL", "ACKR3",  "CD244", "CD96", "IL2RA", "IL3RA", "CD47", "CLEC12A", "CD200", "HAVCR2", "CD70", "KLRK1", "DRD2", "CD27","ULBP2", "THY1","PTPRC", "CD9")
+FeaturePlot(aml.combined, features =c("CD79A", "CD72"), blend = T)
+VlnPlot(aml.combined, features = cycles)
+FeaturePlot(aml.combined, features =cycles)
+
+
+
+VlnPlot(aml.combined, features = features)
+FeaturePlot(aml.combined, features =features)
+for (i in newfeatures){
+  print(RidgePlot(aml.combined, features =i, group.by = "patient", cols = patientcols, assay = "SCT")+ theme(legend.position = "none"))
+  print(RidgePlot(aml.combined, features = i, group.by = "cluster_condition", cols = rep(clustercols1, each = 2), assay = "SCT") + theme(legend.position = "none"))
+  }
+FeaturePlot(aml.combined, features =newfeatures)
+DimPlot(aml.combined, cols = DiscretePalette(length(unique(aml.combined$newcluster)),palette = "polychrome"))
+
+dev.off()
+
+
+pdf(paste0(results, "DxvsREL_Dimplots.pdf"), width = 20, height = 10)
+DimPlot(aml.combined, reduction = "umap", split.by = "condition",  cols = clustercols, pt.size = 1.1) + theme(legend.position = "none")
+DimPlot(aml.combined, reduction = "umap", split.by = "condition", group.by = "projections", cols = colors, pt.size = 1.1)+ theme(legend.position = "none")
+dev.off()
+
+```
+
+```{r}
+metadata <- aml.combined@meta.data
+metadata <- car::strings2factors(metadata)
+metadata$samplecluster <- factor(metadata$samplecluster)
+metadata$patient_paired_cluster <- factor(metadata$patient_paired_cluster)
+metadata$newcluster <- factor(metadata$newcluster)
+table(sample = aml.combined$sample, cluster = aml.combined$newcluster)
+table(sample = aml.combined$condition, cluster = aml.combined$newcluster)
+library(vcd)
+table(Cluster = metadata$newcluster,Condition = metadata$condition, patient = metadata$patient)
+
+
+mosaic(~ condition + newcluster , data = metadata, direction = c( "v", "h"), highlighting = "newcluster", highlighting_fill = DiscretePalette(length(unique(aml.combined$newcluster)), palette = "polychrome"))
+mosaic(table(Cluster = metadata$newcluster,Condition = metadata$condition), shade=T, legend=T)
+assoc(table(Cluster = metadata$newcluster,Condition = metadata$condition), shade=T, legend=T)
+
+
+mosaic(table(Celltype = metadata$projection, Cluster = metadata$newcluster), shade=T, legend=T, labeling = vcd::labeling_border(rot_labels = c(0, 0)))
+
+(table( cluster = aml.combined$newcluster,sample = aml.combined$condition) / colSums(table( cluster = aml.combined$newcluster,sample = aml.combined$condition)))
+```
+
+
+```{r}
+table1 <- table(Cluster = selected$newcluster, Proj =selected$projections)
+
+pdf(paste0(results, "projectionsSelectedClusters.pdf"), width = 12)
+
+assoc(t(table1)[which(colSums(table1)/sum(colSums(table1))*100 > 0.1),], 
+      shade=T, legend=T, labeling = vcd::labeling_border(
+        rot_labels = c(0, 0), 
+        offset_labels = c(0,0,0,4),
+        gp_labels = gpar(fontsize = 8), gp_varnames = gpar(fontsize = 0, fontface = 0) ), margins = c(left =10), )
+dev.off()
+
+table1 <- table(Cluster = aml.combined$newcluster, Proj =aml.combined$projections)
+
+pdf(paste0(results, "projectionsALLClusters.pdf"), width = 12)
+
+assoc(t(table1)[which(colSums(table1)/sum(colSums(table1))*100 > 0.05),], 
+      shade=T, legend=T, labeling = vcd::labeling_border(
+        rot_labels = c(0, 0), 
+        offset_labels = c(0,0,0,4),
+        gp_labels = gpar(fontsize = 8), gp_varnames = gpar(fontsize = 0, fontface = 0) ), margins = c(left =10), )
+dev.off()
+```
+
+
+
+
+
+```{r}
+#metadata <- metadata[order(metadata$Condition),]
+df <- as.data.frame(matrix(ncol=length(levels(metadata$sample)), nrow=0))
+names(df) <- levels(metadata$sample)
+
+for (i in levels(metadata$newcluster)) {
+  clusters <- c(table(metadata$sample[which(metadata$newcluster == i)]))
+  df[i,] <- clusters
+}
+
+df = df/colSums(df)
+
+
+df = as.data.frame.matrix(prop.table(table(metadata$newcluster, metadata$sample), margin = 2))
+
+#df[df== 0] <- NA
+df <- df[,c("AML9", "AML14", "AML7", "AML16", "AML13", "AML15", "AML10", "AML17")]
+#View(df)
+
+library(gplots)
+colcolors <- c(rep(c("chartreuse3", "purple"), each =4))
+heatmap.2(as.matrix(df), trace = "none",
+          col =colorRampPalette(c("blue3", "white", "red3")),
+          ColSideColors = colcolors,
+          srtCol = 45, offsetCol =0.5,
+          cexCol = 1,
+          #Rowv = NULL,
+          Colv = NULL,
+          key = T,
+          density.info = "none",
+          key.xlab = "Proportion of cells per cluster \n (Z-Score)",
+          margin=c(5,20),
+          scale = "row", 
+          #na.color = "black"
+          )
+legend(x = list(x = 0.75, y = 1),      
+    legend = c(unique(aml.combined$condition)),
+    fill = unique(colcolors), 
+    lty= 0.1,             
+    lwd = 0.1,           
+    cex=.7,
+    xjust = 0.5,
+    x.intersp = -1,
+    xpd = T
+    )
+
+df$cluster <- rownames(df)
+
+library(reshape2)
+df1 <- df %>% melt(id.vars = "cluster", variable.name = "Sample", value.name = "prop")
+df1$Condition <- ifelse(df1$Sample == "AML9" | df1$Sample == "AML7" | df1$Sample == "AML14" | df1$Sample == "AML16", "Dx", "REL")
+df1$patient <- factor(ifelse(df1$Sample == "AML9" | df1$Sample == "AML13", "AML9.13",
+                             ifelse(df1$Sample == "AML7" | df1$Sample == "AML10", "AML7.10", 
+                                    ifelse(df1$Sample == "AML14" | df1$Sample == "AML15", "AML14.15", "AML16.17"))))
+library(ggpubr)
+comparisons <- list()
+for (i in unique(df1$cluster)){
+  comparisons[[i]] <- c("Dx","REL")
+}
+
+
+
+df <- as.data.frame(matrix(ncol=length(levels(metadata$sample)), nrow=0))
+names(df) <- levels(metadata$sample)
+
+for (i in levels(metadata$newcluster)) {
+  clusters <- c(table(metadata$sample[which(metadata$newcluster == i)]))
+  df[i,] <- clusters
+}
+
+df = df/colSums(df)
+df = as.data.frame.matrix(prop.table(table(metadata$newcluster, metadata$sample), margin = 2))
+#df[df== 0] <- NA
+df <- df[,c("AML9", "AML14", "AML7", "AML16", "AML13", "AML15", "AML10", "AML17")]
+df$cluster <- rownames(df)
+for (i in levels(metadata$sample)){
+  df[,i] <- scale(df[,i])
+}
+library(reshape2)
+df1 <- df %>% melt(id.vars = "cluster", variable.name = "Sample", value.name = "prop")
+df1$Condition <- factor(ifelse(df1$Sample == "AML9" | df1$Sample == "AML7" | df1$Sample == "AML14" | df1$Sample == "AML16", "Dx", "REL"))
+df1$patient <- factor(ifelse(df1$Sample == "AML9" | df1$Sample == "AML13", "AML9.13",
+                             ifelse(df1$Sample == "AML7" | df1$Sample == "AML10", "AML7.10", 
+                                    ifelse(df1$Sample == "AML14" | df1$Sample == "AML15", "AML14.15", "AML16.17"))))
+df1$cluster <- factor(df1$cluster, levels = as.character(order(as.integer(unique(df1$cluster)))), labels = as.character(order(as.integer(unique(df1$cluster)))) )
+library(ggpubr)
+library(rstatix)
+
+ggpaired(data = df1, x = "Condition", y = "prop", fill = "Condition",
+         #facet.by = "cluster",
+         #label = "patient",
+         id = "patient", ylab = "Proportion of cells per cluster \n (Z-Score)", palette = c("chartreuse3", "purple"))+ facet_wrap(. ~ cluster, scales="free_y") + #stat_compare_means(paired = T, method = "t.test", vjust = 1.5, label.x.npc =  "center", label = "p.format") + 
+  theme(legend.position = "none")
+
+
+
+
+df <- as.data.frame(matrix(ncol=length(levels(metadata$sample)), nrow=0))
+names(df) <- levels(metadata$sample)
+
+for (i in levels(metadata$newcluster)) {
+  clusters <- c(table(metadata$sample[which(metadata$newcluster == i)]))
+  df[i,] <- clusters
+}
+
+df = df/colSums(df)
+df = as.data.frame.matrix(prop.table(table(metadata$newcluster, metadata$sample), margin = 2))
+#df[df== 0] <- NA
+df <- df[,c("AML9", "AML14", "AML7", "AML16", "AML13", "AML15", "AML10", "AML17")]
+
+df$AML9.13 <- df$AML13/df$AML9
+df$AML14.15 <- df$AML15/df$AML14
+df$AML7.10 <- df$AML10/df$AML7
+df$AML16.17 <- df$AML17/df$AML16
+df[df == Inf] <- NA
+df <- df[,9:ncol(df)]
+df <- log2(df)
+for (i in ncol(df)){
+  df[,i] <- scale(df[,i])
+}
+
+library(gplots)
+colcolors <- c(rep(c("orange", "darkolivegreen"), each =2))
+heatmap.2(as.matrix(df), trace = "none",
+          col =colorRampPalette(c("blue3", "white", "red3")),
+          ColSideColors = colcolors,
+          srtCol = 45, offsetCol =0.5,
+          cexCol = 1,
+          #Rowv = NULL,
+          #Colv = NULL,
+          key = T,
+          density.info = "none",
+          key.xlab = "Proportion of cells per cluster \n (Z-Score)",
+          margin=c(5,20),
+          scale = "col", 
+          #na.color = "black"
+          )
+legend(x = list(x = 0.75, y = 1),      
+    legend = c(unique(aml.combined$subgroup)),
+    fill = unique(colcolors), 
+    lty= 0.1,             
+    lwd = 0.1,           
+    cex=.7,
+    xjust = 0.5,
+    x.intersp = -1,
+    xpd = T
+    )
+
+library(pheatmap)
+
+
+
+```
+
+```{r}
+
+p1 = DimPlot(aml.combined, reduction = "umap", split.by = "condition", group.by = "projections",  cells.highlight = hscs)
+p2= DimPlot(aml.combined, reduction = "umap", cols = DiscretePalette(length(unique(aml.combined$newcluster)), palette = "polychrome"))
+p2 + p1
+
+table1 <- prop.table(table(celltype = metadata$projections, cluster = metadata$newcluster), margin = 2)
+#table1[table1 == 0] <- NA
+#table1/colSums(table1)
+
+heatmap.2(as.matrix(table1), trace = "none",
+          col =colorRampPalette(c("blue3", "white", "red3")),
+          #ColSideColors = colcolors,
+          srtCol = 0, offsetCol =0.5,
+          cexCol = 1,
+          #Rowv = NULL,
+          #Colv = NULL,
+          key = T,
+          density.info = "none",
+          key.xlab = "Proportion of cells per cluster \n (Z-Score)",
+          margin=c(5,20),
+          scale = "row", 
+          #na.color = "black"
+         )
+
+```
+
+```{r}
+selected <- droplevels(subset(metadata, metadata$newcluster %in% c("5", "7", "10", "12") ))
+assoc(table(Cluster = selected$newcluster,Celltype = selected$projections), shade=T, legend=T,labeling = vcd::labeling_border(rot_labels = c(90, 0),gp_labels = gpar(fontsize = 7)))
+assoc(table(Celltype = selected$projections,Cluster = selected$newcluster), shade=T, legend=T,labeling = vcd::labeling_border(rot_labels = c(0,90),gp_labels = gpar(fontsize = 7)))
+
+table1 <-prop.table(table(celltype = selected$projections, cluster = selected$newcluster),2)
+#table1[table1 == 0] <- NA
+table1/colSums(table1)
+
+heatmap.2(as.matrix(table1), trace = "none",
+          col =colorRampPalette(c("blue3", "white", "red3")),
+          #ColSideColors = colcolors,
+          srtCol = 45, offsetCol =0.5,
+          cexCol = 1,
+          #Rowv = NULL,
+          #Colv = NULL,
+          key = T,
+          density.info = "none",
+          key.xlab = "Proportion of cells per cluster \n (Z-Score)",
+          margin=c(5,20),
+          scale = "row", 
+          #na.color = "black"
+         )
+
+df <- as.data.frame(matrix(ncol=length(levels(metadata$projections)), nrow=0))
+names(df) <- levels(metadata$projections)
+
+for (i in levels(metadata$newcluster)) {
+  clusters <- c(table(metadata$projections[which(metadata$newcluster == i)]))
+  df[i,] <- clusters
+}
+#df <- rbind(df, table(metadata$projections))
+#df$total <- rowSums(df)
+df <- df/rowSums(df)
+df = as.data.frame.matrix(prop.table(table(metadata$newcluster, metadata$projections), margin = 2))
+#df <- t(df)
+for (i in colnames(df)){
+  df[,i] <-c(scale(df[,i]))
+}
+#df = df/colSums(df)
+
+df <- t(df)
+#df[df== 0] <- NA
+#df <- df[,c(1:ncol(df)-1)] 
+#df <- t(df)
+df <- df[,c("5","7","10","12")]
+colnames(df) <- c("5","7","10","12")
+#df[df == 0] <- NA
+heatmap.2(as.matrix(df), trace = "none",
+          col =colorRampPalette(c("blue3", "white", "red3")),
+          #ColSideColors = colcolors,
+          srtCol = 45, offsetCol =0.5,
+          cexCol = 1,
+          #Rowv = NULL,
+          #Colv = NULL,
+          key = T,
+          density.info = "none",
+          key.xlab = "Proportion of cells per cluster \n (Z-Score)",
+          margin=c(5,20),
+          #scale = "row", 
+          na.color = "grey"
+         )
+
+
+```
+
+```{r}
+df <- as.data.frame(matrix(ncol=length(levels(metadata$sample)), nrow=0))
+names(df) <- levels(metadata$sample)
+
+for (i in levels(metadata$projections)) {
+  clusters <- c(table(metadata$sample[which(metadata$projections == i)]))
+  df[i,] <- clusters
+}
+df <- t(df)
+for (i in colnames(df)){
+  df[,i] <-c(scale(df[,i]))
+}
+#df = df/colSums(df)
+#df = as.data.frame.matrix(prop.table(table(metadata$projections, metadata$sample), margin = 2))
+df <- t(df)
+#df[df== 0] <- NA
+df <- df[,c("AML9", "AML13", "AML14", "AML15", "AML7", "AML10", "AML16", "AML17")]
+#View(df)
+
+library(gplots)
+colcolors <- c(rep(c("chartreuse3", "purple"), 4))
+heatmap.2(as.matrix(df), trace = "none",
+          col =colorRampPalette(c("blue3", "white", "red3")),
+          ColSideColors = colcolors,
+          srtCol = 45, offsetCol =0.5,
+          cexCol = 1,
+          #Rowv = NULL,
+          Colv = NULL,
+          key = T,
+          density.info = "none",
+          key.xlab = "Proportion of cells per cluster \n (Z-Score)",
+          margin=c(5,20),
+          scale = "row", 
+          #na.color = "black"
+          colsep = c(2,4,6)
+          )
+legend(x = list(x = 0.75, y = 1),      
+    legend = c(unique(aml.combined$condition)),
+    fill = unique(colcolors), 
+    lty= 0.1,             
+    lwd = 0.1,           
+    cex=.7,
+    xjust = 0.5,
+    x.intersp = -1,
+    xpd = T
+    )
+
+
+
+
+
+#metadata <- metadata[order(metadata$Condition),]
+df <- as.data.frame(matrix(ncol=length(levels(selected$sample)), nrow=0))
+names(df) <- levels(selected$sample)
+
+for (i in levels(selected$projections)) {
+  clusters <- c(table(selected$sample[which(selected$projections == i)]))
+  df[i,] <- clusters
+}
+
+df <- t(df)
+for (i in colnames(df)){
+  df[,i] <-c(scale(df[,i]))
+}
+df <- t(df)
+#df[df== 0] <- NA
+df <- df[,c("AML9", "AML13", "AML14", "AML15", "AML7", "AML10", "AML16", "AML17")]
+df <- df[,c("AML9", "AML14", "AML7", "AML16", "AML13", "AML15", "AML10", "AML17")]
+#View(df)
+
+library(gplots)
+colcolors <- c(rep(c("chartreuse3", "purple"), each = 4))
+heatmap.2(as.matrix(df), trace = "none",
+          col =colorRampPalette(c("blue3", "white", "red3")),
+          ColSideColors = colcolors,
+          srtCol = 45, offsetCol =0.5,
+          cexCol = 1,
+          #Rowv = NULL,
+          Colv = NULL,
+          key = T,
+          density.info = "none",
+          key.xlab = "Proportion of cells per cluster \n (Z-Score)",
+          margin=c(5,20),
+          scale = "row", 
+          #na.color = "black"
+          #colsep = c(2,4,6)
+          )
+legend(x = list(x = 0.75, y = 1),      
+    legend = c(unique(aml.combined$condition)),
+    fill = unique(colcolors), 
+    lty= 0.1,             
+    lwd = 0.1,           
+    cex=.7,
+    xjust = 0.5,
+    x.intersp = -1,
+    xpd = T
+    )
+
+
+
+
+
+
+
+```
+
+```{r}
+selected$cluster_condition <- factor(paste( selected$condition,selected$newcluster, sep = "."))
+df <- as.data.frame(matrix(ncol=length(levels(selected$cluster_condition)), nrow=0))
+names(df) <- levels(selected$cluster_condition)
+
+for (i in levels(selected$projections)) {
+  clusters <- c(table(selected$cluster_condition[which(selected$projections == i)]))
+  df[i,] <- clusters
+}
+df <- t(df)
+df = as.data.frame.matrix(prop.table(table(selected$cluster_condition, selected$projections), margin = 1))
+for (i in colnames(df)){
+  df[,i] <-c(scale(df[,i]))
+}
+#df = df/colSums(df)
+
+df <- t(df)
+#df[df== 0] <- NA
+df <- df[,c("Dx.5", "REL.5", "Dx.7","REL.7","Dx.10", "REL.10","Dx.12", "REL.12")]
+colcolors <- c(rep(c("chartreuse3", "purple"), 4))
+heatmap.2(as.matrix(df), trace = "none",
+          col =colorRampPalette(c("blue3", "white", "red3"))(80),
+          ColSideColors = colcolors,
+          srtCol = 45, offsetCol =0.5,
+          cexCol = 1,
+          #Rowv = NULL,
+          Colv = NULL,
+          key = T,
+          density.info = "none",
+          key.xlab = "Proportion of cells per cluster \n (Z-Score)",
+          margin=c(5,20),
+          #scale = "row", 
+          #na.color = "black"
+          colsep = c(2,4,6,8,10)
+          )
+legend(x = list(x = 0.75, y = 1),      
+    legend = c(unique(aml.combined$condition)),
+    fill = unique(colcolors), 
+    lty= 0.1,             
+    lwd = 0.1,           
+    cex=.7,
+    xjust = 0.5,
+    x.intersp = -1,
+    xpd = T
+    )
+
+metadata$cluster_condition <- factor(paste( metadata$condition,metadata$newcluster, sep = "."))
+df = as.data.frame.matrix(prop.table(table(metadata$cluster_condition, metadata$projections), margin = 1))
+for (i in colnames(df)){
+  df[,i] <-c(scale(df[,i]))
+}
+#df = df/colSums(df)
+
+df <- t(df)
+#df[df== 0] <- NA
+df <- df[,c("Dx.5", "REL.5", "Dx.7","REL.7","Dx.10", "REL.10","Dx.12", "REL.12")]
+colcolors <- c(rep(c("chartreuse3", "purple"), 4))
+pdf(paste0(results, "projections_allclusters_then_selected.pdf"))
+heatmap.2(as.matrix(df), trace = "none",
+          col =colorRampPalette(c("blue3", "white", "red3"))(80),
+          ColSideColors = colcolors,
+          srtCol = 45, offsetCol =0.5,
+          cexCol = 1,
+          #Rowv = NULL,
+          Colv = NULL,
+          key = T,
+          density.info = "none",
+          key.xlab = "Proportion of cells per cluster \n (Z-Score)",
+          margin=c(5,20),
+          scale = "none", 
+          #na.color = "black"
+          colsep = c(2,4,6,8,10)
+          )
+
+legend(x = list(x = 0.75, y = 1),      
+    legend = c(unique(aml.combined$condition)),
+    fill = unique(colcolors), 
+    lty= 0.1,             
+    lwd = 0.1,           
+    cex=.7,
+    xjust = 0.5,
+    x.intersp = -1,
+    xpd = T
+    )
+dev.off()
+```
+
+```{r}
+
+df <- as.data.frame(matrix(ncol=length(levels(selected$sample)), nrow=0))
+names(df) <- levels(selected$sample)
+
+for (i in levels(selected$projections)) {
+  clusters <- c(table(selected$sample[which(selected$projections == i)]))
+  df[i,] <- clusters
+}
+
+#df = df/colSums(df)
+#df[df== 0] <- NA
+df = as.data.frame.matrix(prop.table(table(selected$projections, selected$sample), margin = c(1,2)))
+
+df <- df[,c("AML9", "AML14", "AML7", "AML16", "AML13", "AML15", "AML10", "AML17")]
+df$cluster <- rownames(df)
+for (i in levels(selected$sample)){
+  df[,i] <- scale(df[,i])
+}
+library(reshape2)
+df1 <- df %>% melt(id.vars = "cluster", variable.name = "Sample", value.name = "prop")
+df1$Condition <- factor(ifelse(df1$Sample == "AML9" | df1$Sample == "AML7" | df1$Sample == "AML14" | df1$Sample == "AML16", "Dx", "REL"))
+df1$patient <- factor(ifelse(df1$Sample == "AML9" | df1$Sample == "AML13", "AML9.13",
+                             ifelse(df1$Sample == "AML7" | df1$Sample == "AML10", "AML7.10", 
+                                    ifelse(df1$Sample == "AML14" | df1$Sample == "AML15", "AML14.15", "AML16.17"))))
+library(ggpubr)
+library(rstatix)
+
+ggpaired(data = df1, x = "Condition", y = "prop", fill = "Condition", id = "patient", ylab = "Proportion of cells per cluster \n (Z-Score)", palette = c("chartreuse3", "purple")) + facet_wrap(. ~ cluster, scales="free_y") +
+ stat_compare_means(paired = T, method = "t.test", vjust = 1.5, label.x.npc =  "center", label = "p.format") + theme(legend.position = "none")
+
+```
+
+# Enrichment
+
+
+
+
+
+```{r}
+aml.combined <- PrepSCTFindMarkers(aml.combined, assay = "integrated")
+data.markers <- FindAllMarkers(aml.combined, only.pos = T, min.pct = 0.15, logfc.threshold = 0.25, assay = "integrated")
+top100 <- data.markers %>% group_by(cluster) %>% top_n(n = 100, wt = avg_log2FC) # Visto en algún tutorial y foro, me quedo con los primeros 100 genes
+top100pval <- subset(top100, rowSums(top100[5] < 0.05) > 0)
+
+library("clusterProfiler")
+library("org.Hs.eg.db")
+library("AnnotationHub")
+df <- top100pval[,7:6]
+dfsample <- split(df$gene,df$cluster)
+length(dfsample) 
+
+
+
+genelist = list()
+for (i in 1:length(dfsample)){
+  dfsample[[i]] <- bitr(dfsample[[i]], fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db")
+  genelist[[i]] <- dfsample[[i]]$ENTREZID
+}
+names(genelist)=names(dfsample)
+
+GOclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichGO", OrgDb = "org.Hs.eg.db")
+dotplot(GOclusterplot,  font.size = 8, label_format = 100)
+View(GOclusterplot@compareClusterResult)
+
+
+KEGGclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichKEGG")
+dotplot(KEGGclusterplot, label_format = 100)
+View(KEGGclusterplot@compareClusterResult)
+
+ library(ReactomePA)
+PAclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichPathway")
+PAclusterplot@compareClusterResult$Description <- stringr::str_remove(string = PAclusterplot@compareClusterResult$Description, pattern = "Homo sapiens\r: ")
+dotplot(PAclusterplot, label_format = 100)
+View(PAclusterplot@compareClusterResult)
+
+saveRDS(list(G= GOclusterplot, KEGG = KEGGclusterplot, PA = PAclusterplot), paste0(results, "enrichment normal.rds"))
+
+pdf(paste0(results, "enrichment normal.pdf"), width = 10)
+dotplot(GOclusterplot,  font.size = 6, label_format = 100, title = "GO")
+dotplot(KEGGclusterplot,  font.size = 6, label_format = 100, title = "KEGG")
+dotplot(PAclusterplot,  font.size = 6, label_format = 80,title = "ReactomePA", showCategory = 5)
+dev.off()
+
+```
+
+
+
+
+
+
+
+
+```{r}
+
+for (i in c(5,7,10,12)){
+
+cluster5 <- subset(aml.combined,idents = i)
+Idents(cluster5) <- "condition"
+DimPlot(cluster5)
+cluster5 <- PrepSCTFindMarkers(cluster5, assay = "integrated")
+
+data.markers <- FindAllMarkers(cluster5, only.pos = T, min.pct = 0.15, logfc.threshold = 0.25, assay = "integrated")
+top100 <- data.markers %>% group_by(cluster) %>% top_n(n = 100, wt = avg_log2FC) # Visto en algún tutorial y foro, me quedo con los primeros 100 genes
+top100pval <- subset(top100, rowSums(top100[5] < 0.05) > 0)
+
+library("clusterProfiler")
+library("org.Hs.eg.db")
+library("AnnotationHub")
+df <- top100pval[,7:6]
+dfsample <- split(df$gene,df$cluster)
+length(dfsample) 
+
+
+
+genelist = list()
+for (i in 1:length(dfsample)){
+  dfsample[[i]] <- bitr(dfsample[[i]], fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db")
+  genelist[[i]] <- dfsample[[i]]$ENTREZID
+}
+names(genelist)=names(dfsample)
+
+GOclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichGO", OrgDb = "org.Hs.eg.db")
+dotplot(GOclusterplot,  font.size = 8, label_format = 100, x = "GeneRatio")
+View(GOclusterplot@compareClusterResult)
+
+
+KEGGclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichKEGG")
+dotplot(KEGGclusterplot, label_format = 100, x = "GeneRatio")
+View(KEGGclusterplot@compareClusterResult)
+
+ library(ReactomePA)
+PAclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichPathway")
+PAclusterplot@compareClusterResult$Description <- stringr::str_remove(string = PAclusterplot@compareClusterResult$Description, pattern = "Homo sapiens\r: ")
+dotplot(PAclusterplot, label_format = 100, x = "GeneRatio")
+View(PAclusterplot@compareClusterResult)
+
+}
+```
+
+```{r}
+enrichment <- function(cluster_select){
+  data <- subset(aml.combined,idents = cluster_select)
+  Idents(data) <- "condition"
+  #DimPlot(cluster5)
+  data <- PrepSCTFindMarkers(data, assay = "integrated")
+  
+  data.markers <- FindAllMarkers(data, only.pos = T, min.pct = 0.15, logfc.threshold = 0.25, assay = "integrated")
+  top100 <- data.markers %>% group_by(cluster) %>% top_n(n = 100, wt = avg_log2FC) # Visto en algún tutorial y foro, me quedo con los primeros 100 genes
+  top100pval <- subset(top100, rowSums(top100[5] < 0.05) > 0)
+  library("clusterProfiler")
+  library("org.Hs.eg.db")
+  library("AnnotationHub")
+  df <- top100pval[,7:6]
+  dfsample <- split(df$gene,df$cluster)
+  length(dfsample) 
+  
+  genelist = list()
+  for (i in 1:length(dfsample)){
+    dfsample[[i]] <- bitr(dfsample[[i]], fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db")
+    genelist[[i]] <- dfsample[[i]]$ENTREZID
+    }
+  names(genelist)=names(dfsample)
+  biglist <- list(plots = list(),
+                  object = list())
+  biglist$object$GO <- GOclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichGO", OrgDb = "org.Hs.eg.db")
+  #biglist$plots$GO <- dotplot(GOclusterplot,  font.size = 8, label_format = 100, x = "GeneRatio", title = paste0("GO, cluster ",cluster_select ))
+
+  biglist$object$KEGG <-KEGGclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichKEGG")
+  #biglist$plots$KEGG <-dotplot(KEGGclusterplot, label_format = 100, x = "GeneRatio",  title = paste0("KEGG, cluster ",cluster_select ))
+  
+   library(ReactomePA)
+  biglist$object$Reactome<- compareCluster(geneCluster = genelist, fun = "enrichPathway")
+  biglist$object$Reactome@compareClusterResult$Description <-stringr::str_remove(string = biglist$object$Reactome@compareClusterResult$Description, pattern = "Homo sapiens\r: ")
+  #biglist$plots$Reactome <-dotplot(PAclusterplot, label_format = 100, x = "GeneRatio", title = paste0("KEGG, cluster ",cluster_select ))
+  #View(PAclusterplot@compareClusterResult)
+   return(biglist)
+}
+   
+#}
+  selected <- c(5,7,10,12)
+library(parallel)
+ numCores <- parallel::detectCores()# Requires library(parallel)
+ listcluster <- mclapply(X = selected, FUN = enrichment, mc.cores = numCores)
+ names(listcluster) <- as.character(selected)
+
+
+ 
+ 
+#listcluster <- readRDS("./results/finalAnalysis/SelectedClustersEnrichment.rds")
+lista <- list()
+for (i in names(listcluster)){
+  for (j in names(listcluster[[i]]$object)){
+    listcluster[[i]]$plots[[j]] <- dotplot(listcluster[[i]]$object[[j]], label_format = 100, x = "GeneRatio",  title = paste0(j,", cluster ",i ))
+    lista[[j]] <- listcluster[[i]]$object[[j]]@compareClusterResult
+  }
+  write.xlsx(lista, paste0(results,"cluster",i,"_enrichment.xlsx"))
+  lista <- list()
+  #pdf( paste0(results,"cluster",i,"_enrichment.pdf"))
+  print(listcluster[[i]]$plots)
+  #dev.off()
+}
+markerlist <- list()
+for (i in selected){
+  data <- subset(aml.combined,idents = i)
+  Idents(data) <- "condition"
+  #DimPlot(cluster5)
+  data <- PrepSCTFindMarkers(data, assay = "integrated")
+  
+  data.markers <- FindAllMarkers(data, only.pos = T, min.pct = 0.15, logfc.threshold = 0.25, assay = "integrated")
+  top100 <- data.markers %>% group_by(cluster) %>% top_n(n = 100, wt = avg_log2FC) # Visto en algún tutorial y foro, me quedo con los primeros 100 genes
+  top100pval <- subset(top100, rowSums(top100[5] < 0.05) > 0)
+  markerlist[[as.character(i)]] <- top100pval
+}
+write.xlsx(markerlist, paste0(results, "selectedClusters_Markers.xlsx"))
+
+
+
+alltogether <- subset(aml.combined,cells=colnames(aml.combined)[aml.combined$newcluster %in% selected])
+Idents(alltogether) <- "condition"
+DimPlot(alltogether)
+alltogether <- PrepSCTFindMarkers(alltogether, assay = "integrated")
+
+data.markers <- FindAllMarkers(alltogether, only.pos = T, min.pct = 0.15, logfc.threshold = 0.25, assay = "integrated")
+top100 <- data.markers %>% group_by(cluster) %>% top_n(n = 100, wt = avg_log2FC) # Visto en algún tutorial y foro, me quedo con los primeros 100 genes
+top100pval <- subset(top100, rowSums(top100[5] < 0.05) > 0)
+
+library("clusterProfiler")
+library("org.Hs.eg.db")
+library("AnnotationHub")
+df <- top100pval[,7:6]
+dfsample <- split(df$gene,df$cluster)
+length(dfsample) 
+
+
+
+genelist = list()
+for (i in 1:length(dfsample)){
+  dfsample[[i]] <- bitr(dfsample[[i]], fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db")
+  genelist[[i]] <- dfsample[[i]]$ENTREZID
+}
+names(genelist)=names(dfsample)
+
+GOclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichGO", OrgDb = "org.Hs.eg.db")
+dotplot(GOclusterplot,  font.size = 8, label_format = 100, x = "GeneRatio")
+View(GOclusterplot@compareClusterResult)
+
+
+KEGGclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichKEGG")
+dotplot(KEGGclusterplot, label_format = 100, x = "GeneRatio")
+View(KEGGclusterplot@compareClusterResult)
+
+ library(ReactomePA)
+PAclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichPathway")
+PAclusterplot@compareClusterResult$Description <- stringr::str_remove(string = PAclusterplot@compareClusterResult$Description, pattern = "Homo sapiens\r: ")
+dotplot(PAclusterplot, label_format = 100, x = "GeneRatio")
+View(PAclusterplot@compareClusterResult)
+
+enrichmentall <- readRDS(paste0(results, "allTogether_enrichment.rds"))
+lista <- c()
+for (i in names(enrichmentall)){
+  dotplot(enrichmentall[[i]])
+  lista[[i]] <- enrichmentall[[i]]@compareClusterResult
+}
+write.xlsx(lista, paste0(results,"alltogether_enrichment.xlsx"))
+```
+
+## Dx vs REL
+
+```{r}
+comp <- aml.combined
+Idents(comp) <- "condition"
+comp <- PrepSCTFindMarkers(comp, assay = "integrated")
+
+data.markers <- FindAllMarkers(comp, only.pos = T, min.pct = 0.15, logfc.threshold = 0.25, assay = "integrated")
+top100 <- data.markers %>% group_by(cluster) %>% top_n(n = 100, wt = avg_log2FC) # Visto en algún tutorial y foro, me quedo con los primeros 100 genes
+top100pval <- subset(top100, rowSums(top100[5] < 0.05) > 0)
+
+library("clusterProfiler")
+library("org.Hs.eg.db")
+library("AnnotationHub")
+df <- top100pval[,7:6]
+dfsample <- split(df$gene,df$cluster)
+length(dfsample) 
+
+
+
+genelist = list()
+for (i in 1:length(dfsample)){
+  dfsample[[i]] <- bitr(dfsample[[i]], fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db")
+  genelist[[i]] <- dfsample[[i]]$ENTREZID
+}
+names(genelist)=names(dfsample)
+
+GOclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichGO", OrgDb = "org.Hs.eg.db")
+dotplot(GOclusterplot,  font.size = 8, label_format = 100, x = "GeneRatio")
+View(GOclusterplot@compareClusterResult)
+
+
+KEGGclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichKEGG")
+dotplot(KEGGclusterplot, label_format = 100, x = "GeneRatio")
+View(KEGGclusterplot@compareClusterResult)
+
+ library(ReactomePA)
+PAclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichPathway")
+PAclusterplot@compareClusterResult$Description <- stringr::str_remove(string = PAclusterplot@compareClusterResult$Description, pattern = "Homo sapiens\r: ")
+dotplot(PAclusterplot, label_format = 100, x = "GeneRatio")
+View(PAclusterplot@compareClusterResult)
+
+enrich <- list(GO = GOclusterplot, KEGG = KEGGclusterplot, Reactome = PAclusterplot)
+
+lista <- c()
+for (i in names(enrich)){
+  dotplot(enrich[[i]])
+  lista[[i]] <- enrich[[i]]@compareClusterResult
+}
+write.xlsx(lista, paste0(results,"alltogether_enrichment.xlsx"))
+
+```
+
+# Conserved markers in selected clusters
+```{r}
+
+conserved <- function(x){
+  library("AnnotationHub")
+  DefaultAssay(aml.combined) <- "SCT"
+  clusters.conserved <-  FindConservedMarkers(aml.combined, ident.1 = x,
+                                              grouping.var = "condition",
+                                              verbose = T)
+  top100 <-head(clusters.conserved[order(clusters.conserved$max_pval,
+                                         decreasing = F),], 100) 
+  top100 <- subset(top100, top100$max_pval < 0.05)
+  top100 <- rownames(top100)
+  dfsample <- bitr(top100, fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db")
+  genelist <- dfsample$ENTREZID
+  return(genelist)
+}
+  selected <- c(5,7,10,12)
+library(parallel)
+numCores <- parallel::detectCores()# Requires library(parallel)
+listcluster <- mclapply(X = selected, FUN = conserved, mc.cores = numCores)
+ names(listcluster) <- as.character(selected)
+
+ 
+setReadable()
+ 
+GOclusterplot <- compareCluster(geneCluster = listcluster, fun = "enrichGO", OrgDb = "org.Hs.eg.db")
+dotplot(GOclusterplot,  font.size = 8, label_format = 100)
+View(GOclusterplot@compareClusterResult)
+
+
+KEGGclusterplot <- compareCluster(geneCluster = listcluster, fun = "enrichKEGG")
+dotplot(KEGGclusterplot, label_format = 100)
+View(KEGGclusterplot@compareClusterResult)
+
+ library(ReactomePA)
+PAclusterplot <- compareCluster(geneCluster = listcluster, fun = "enrichPathway")
+PAclusterplot@compareClusterResult$Description <- stringr::str_remove(string = PAclusterplot@compareClusterResult$Description, pattern = "Homo sapiens\r: ")
+dotplot(PAclusterplot, label_format = 100)
+View(PAclusterplot@compareClusterResult)
+ 
+write.xlsx(list(GO = GOclusterplot, KEGG = KEGGclusterplot, PA = PAclusterplot), paste0(results, "selected_clusters_conserved_enrichment.xlsx")) 
+ 
+ 
+ 
+ 
+ 
+```
+
+# try mosaic plot
+
+```{r}
+ggplot(metadata, aes(x = newcluster, fill = condition)) + 
+  geom_bar(position = "fill") +
+  labs(y = "proportion") + scale_fill_manual(values = DiscretePalette(length(unique(aml.combined$newcluster)), palette = "polychrome"))
+grid.arrange(p1, p2, ncol=2)
+
+
+library(vcd)
+
+
+
+mosaic(~ condition + newcluster , data = metadata, direction = c( "v", "h"), highlighting = "newcluster", highlighting_fill = DiscretePalette(length(unique(aml.combined$newcluster)), palette = "polychrome"))
+mosaic(table(cluster = metadata$newcluster,condition = metadata$condition), shade=T, legend=T)
+pdf(paste0(results, "mosaicplot.pdf"))
+assoc(table(Cluster = metadata$newcluster, Condition= metadata$condition), shade=T, legend=T, )
+assoc(table( Condition= metadata$condition,Cluster = metadata$newcluster), shade=T, legend=T, )
+dev.off()
+```
+# Everithing conserved enrichment
+```{r}
+library(openxlsx)
+library(Seurat)
+library(tidyverse)
+conserved <- function(x){
+  library("AnnotationHub")
+  library(clusterProfiler)
+  library(enrichplot)
+  DefaultAssay(aml.combined) <- "SCT"
+  clusters.conserved <-  FindConservedMarkers(aml.combined, ident.1 = x,
+                                              grouping.var = "condition",
+                                              verbose = T)
+  top100 <-head(clusters.conserved[order(clusters.conserved$max_pval,
+                                         decreasing = F),], 100) 
+  top100 <- subset(top100, top100$max_pval < 0.05)
+  top100 <- rownames(top100)
+  dfsample <- bitr(top100, fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db")
+  genelist <- dfsample$ENTREZID
+  return(genelist)
+}
+  selected <- unique(aml.combined$newcluster)
+library(parallel)
+numCores <- parallel::detectCores()# Requires library(parallel)
+listcluster <- mclapply(X = selected, FUN = conserved, mc.cores = numCores)
+ names(listcluster) <- as.character(selected)
+
+ write.xlsx(listcluster, paste0(results, "conserved_Markers_all_clusters.xlsx"))
+
+ library(clusterProfiler)
+GOclusterplot <- compareCluster(geneCluster = listcluster, fun = "enrichGO", OrgDb = "org.Hs.eg.db")
+dotplot(GOclusterplot,  font.size = 8, label_format = 100)
+View(GOclusterplot@compareClusterResult)
+
+
+KEGGclusterplot <- compareCluster(geneCluster = listcluster, fun = "enrichKEGG")
+dotplot(KEGGclusterplot, label_format = 100)
+View(KEGGclusterplot@compareClusterResult)
+
+ library(ReactomePA)
+PAclusterplot <- compareCluster(geneCluster = listcluster, fun = "enrichPathway")
+PAclusterplot@compareClusterResult$Description <- stringr::str_remove(string = PAclusterplot@compareClusterResult$Description, pattern = "Homo sapiens\r: ")
+dotplot(PAclusterplot, label_format = 100)
+View(PAclusterplot@compareClusterResult)
+ 
+write.xlsx(list(GO = GOclusterplot, KEGG = KEGGclusterplot, PA = PAclusterplot), paste0(results, "conserved_enrichment_ALL.xlsx")) 
+saveRDS(list(GO = GOclusterplot, KEGG = KEGGclusterplot, PA = PAclusterplot), paste0(results, "conserved_enrichment_ALL.rds"))
+ 
+ selected <- c(5,7,10,12)
+GOclusterplot1 <- GOclusterplot[GOclusterplot@compareClusterResult$Cluster %in% selected,]
+KEGGclusterplot1 <-  KEGGclusterplot[KEGGclusterplot@compareClusterResult$Cluster %in% selected,]
+ 
+ PAclusterplot1 <- PAclusterplot[PAclusterplot@compareClusterResult$Cluster %in% selected,]
+ 
+write.xlsx(list(GO = GOclusterplot1, KEGG = KEGGclusterplot1, reactome = PAclusterplot1), paste0(results, "selected_clusters_conserved_enrichment.xlsx")) 
+```
+
+
+
+
+
+# ClusterComp
+
+```{r}
+selected.object <- subset(aml.combined, cells = colnames(aml.combined)[aml.combined$newcluster %in% c(5,7,10,12)])
+
+for (i in unique(selected.object$sample)){
+  p <- DimPlot(selected.object, group.by = "samplecluster", cells = colnames(selected.object)[selected.object$sample == i])
+  print(p + plot_annotation(title = i))
+  assoc(table(newcluster = selected.object$newcluster[selected.object$sample == i],samplecluster = selected.object$samplecluster[selected.object$sample == i] ), legend=T, shade = T)
+}
+
+pdf(paste0(results, "Selected_assoc_newcluster_sample.pdf"))
+assoc(table(Cluster = selected.object$newcluster, Sample = selected.object$sample)[,c("AML9", "AML13", "AML7", "AML10", "AML14", "AML15", "AML16","AML17")], legend = T, shade = T)
+dev.off()
+pdf(paste0(results, "Selected_assoc_newcluster_patient.pdf"))
+assoc(table(Cluster = selected.object$newcluster, Sample = selected.object$patient)[,c("AML9.13", "AML14.15", "AML7.10", "AML16.17")], legend = T, shade = T)
+dev.off()
+
+
+pdf(paste0(results, "allclusters_assoc_newcluster_sample.pdf"), width = 12)
+assoc(table(Cluster = aml.combined$newcluster, Sample = aml.combined$sample)[,c("AML9", "AML13", "AML7", "AML10", "AML14", "AML15", "AML16","AML17")], legend = T, shade = T)
+dev.off()
+pdf(paste0(results, "allclusters_assoc_newcluster_patient.pdf"))
+assoc(table(Cluster = aml.combined$newcluster, Sample = aml.combined$patient)[,c("AML9.13", "AML14.15", "AML7.10", "AML16.17")], legend = T, shade = T)
+dev.off()
+
+
+
+DimPlot(selected.object, group.by = "sample")
+table(selected.object$newcluster, selected.object$sample)
+
+pdf(paste0(results, "assoc_newcluster_and_samplecluster_patientcluster.pdf"))
+for (i in unique(selected.object$patient)){
+  p <- DimPlot(selected.object, group.by = "patient_paired_cluster", cells = colnames(selected.object)[selected.object$patient == i])
+  print(p + plot_annotation(title = i))
+  assoc(table(newcluster = selected.object$newcluster[selected.object$patient == i],patientcluster = selected.object$patient_paired_cluster[selected.object$patient == i] ), legend=T, shade = T)
+}
+aml.combined$patient_paired_cluster
+
+
+
+
+
+for (i in unique(selected.object$sample)){
+  p <- DimPlot(selected.object, group.by = "samplecluster", cells = colnames(selected.object)[selected.object$sample == i])
+  print(p + plot_annotation(title = i))
+  assoc(table(newcluster = selected.object$newcluster[selected.object$sample == i],samplecluster = selected.object$samplecluster[selected.object$sample == i] ), legend=T, shade = T)
+}
+aml.combined$patient_paired_cluster
+dev.off()
+
+aml.combined$samplecluster
+```
+
+
+# try fishplot
+
+```{r}
+library(fishplot)
+timepoints <- c(0,30,75,150)
+```
+
+```{r}
+library(openxlsx)
+sheets <- openxlsx::getSheetNames(paste0(results, "selected_clusters_conserved_enrichment.xlsx"))
+enrichment <- lapply(sheets, openxlsx::read.xlsx, xlsxFile=paste0(results, "selected_clusters_conserved_enrichment.xlsx"))
+  
+# assigning names to data frame
+names(enrichment) <- sheets
+lista <- list()
+for (i in names(enrichment)){
+  lista[[i]]<-(as.data.frame.matrix(table(enrichment[[i]]$Description, enrichment[[i]]$Cluster)))
+  lista[[i]] <- lista[[i]][order(rowSums(lista[[i]]), decreasing = T),]
+  lista[[i]] <- lista[[i]][rowSums(lista[[i]]) == 1,]
+  View(lista[[i]])
+}
+
+
+
+
+sheets <- openxlsx::getSheetNames(paste0(results, "selectedClusters_Markers.xlsx"))
+listcluster <- lapply(sheets, openxlsx::read.xlsx, xlsxFile=paste0(results, "selectedClusters_Markers.xlsx"))
+names(listcluster) <- sheets
+```
+
+```{r}
+saveRDS(aml.combined, paste0(results, "Final.rds"))
+```
+
+
+# signature try
+
+```{r}
+
+pdf(paste0(results, "signatures.pdf"))
+library(RColorBrewer)
+OX <- c("LDHA", "CFTR", "HSPD1", "SNHG3", "MAP1LC3C", "COX6B2","TWIST1", "RF00017-1345","ATP5MC3")
+FeaturePlot(aml.combined, features = OX)
+GO.phosox <- c("ABCD1","ACTN3","AFG1L","AK4","ANTKMT","ATP5F1A","ATP5F1B","ATP5F1C","ATP5F1D","ATP5F1E","ATP5F1EP2","ATP5ME","ATP5MF","ATP5MG","ATP5PB","ATP5PD","ATP5PF","ATP5PO","ATP7A","ATPSCKMT","BID","C2orf69","CCNB1","CDK1","CHCHD10","CHCHD2","COA6","COQ9","COX15","COX4I1","COX4I2","COX5A","COX5B","COX6A1","COX6A2","COX6B2","COX7A1","COX7A2","COX7A2L","COX7A2P2","COX7B2","COX7C","COX8C","CYC1","CYCS","DGUOK","DLD","DNAJC15","DNAJC30","FXN","GHITM","ISCU","MIR210","MLXIPL","MSH2","MT-ATP6","MT-ATP8","MT-CO1","MT-CO2","MT-CO3","MT-CYB","MT-ND1","MT-ND2","MT-ND3","MT-ND4","MT-ND4L","MT-ND5","MT-ND6","MTCO2P12","MYC","NDUFA1","NDUFA10","NDUFA12","NDUFA2","NDUFA3","NDUFA4","NDUFA5","NDUFA6","NDUFA7","NDUFA8","NDUFA9","NDUFAB1","NDUFAF1","NDUFB1","NDUFB10","NDUFB2","NDUFB3","NDUFB4","NDUFB5","NDUFB6","NDUFB7","NDUFB8","NDUFB9","NDUFC1","NDUFC2","NDUFC2-KCTD14","NDUFS1","NDUFS2","NDUFS3","NDUFS4","NDUFS5","NDUFS6","NDUFS7","NDUFS8","NDUFV1","NDUFV2","NDUFV3","NIPSNAP2","NUPR1","PARK7","PDE12","PINK1","PPIF","RHOA","SDHA","SDHAF2","SDHC","SDHD","SHMT2","SLC25A23","SLC25A33","SLC25A51","SNCA","STOML2","TAFAZZIN","TEFM","TNF","UQCC2","UQCC3","UQCR10","UQCRB","UQCRC1","UQCRC2","UQCRFS1","UQCRFS1P1","UQCRH","UQCRHL","UQCRQ","VCP")
+g0exit <- c("CCN2","CCNC","CDK3","CDKN2B","CHEK1","DAB2IP","DUX4","FOXO4","HLA-G","MED1","MIR424","MIR503","MYC","PPP2R5B","RHNO1","RRM1","RRM2B","SOX15")
+g0exit = g0exit[g0exit %in% rownames(aml.combined)]
+GO.phosox = GO.phosox[GO.phosox %in% rownames(aml.combined)]
+aml.combined <- AddModuleScore(aml.combined, features = list(g0exit), name = "g0e", assay = "SCT")
+aml.combined <- AddModuleScore(aml.combined, features = list(GO.phosox), name = "phoxox", assay = "SCT")
+FeaturePlot(aml.combined, "phoxox1")+
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+VlnPlot(aml.combined, features = "phoxox1",  assay = "RNA", split.by = "condition", cols = conditioncols)
+
+FeaturePlot(aml.combined, "phoxox1", cells = colnames(aml.combined)[which(aml.combined$orig.ident == "Dx")])+
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+
+
+FeaturePlot(aml.combined, "g0e1")+
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+VlnPlot(aml.combined, features = "g0e1", assay = "RNA", split.by = "condition", cols = conditioncols)
+
+FeaturePlot(aml.combined, "g0e1")+
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+
+
+
+
+PA_G0_earlyG1 <- c("CCNA1","CCNA2","CCNE1","CCNE2","CDC25A","CDC6","CDK1","CDK2","DYRK1A","E2F1","E2F4","E2F5","HDAC1","LIN37","LIN52","LIN54","LIN9","MAX","MYBL2","MYC","PCNA","RBBP4","RBL1","RBL2","TFDP1","TFDP2","TOP2A")
+PA_G0_earlyG1 <- PA_G0_earlyG1[PA_G0_earlyG1 %in% rownames(aml.combined)]
+aml.combined <- AddModuleScore(aml.combined, features = list(PA_G0_earlyG1), name = "PA_GO_early_G", assay = "SCT")
+
+FeaturePlot(aml.combined, "PA_GO_early_G1")+
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+VlnPlot(aml.combined, features = "PA_GO_early_G1", split.by = "condition", cols = conditioncols)
+
+FeaturePlot(aml.combined, "PA_GO_early_G1", cells = colnames(aml.combined)[which(aml.combined$orig.ident == "Dx")])+
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+
+DefaultAssay(aml.combined) <- "integrated"
+
+
+
+cxcr4 <- c("BCAR1","CRK","CXCL12","CXCR4","GNAQ","HRAS","MAP2K1","MAPK1","MAPK3","NFKB1","PIK3C2G","PIK3CA","PIK3R1","PLCG1","PRKCA","PRKCB","PTK2B","RAF1","RELA")
+cxcr4 <- cxcr4[cxcr4 %in% rownames(aml.combined)]
+aml.combined <- AddModuleScore(aml.combined, features = list(cxcr4), name = "cxcr4", assay = "SCT")
+
+
+FeaturePlot(aml.combined, "cxcr41")+
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+VlnPlot(aml.combined, features = "cxcr41", split.by = "condition", cols = conditioncols)
+
+
+
+Paglycolysis <- c("AAAS","ADPGK","ALDOA","ALDOB","ALDOC","BPGM","ENO1","ENO2","ENO3","GAPDH","GAPDHS","GCK","GCKR","GNPDA1","GNPDA2","GPI","HK1","HK2","HK3","NDC1","NUP107","NUP133","NUP153","NUP155","NUP160","NUP188","NUP205","NUP210","NUP214","NUP35","NUP37","NUP42","NUP43","NUP50","NUP54","NUP58","NUP62","NUP85","NUP88","NUP93","NUP98","PFKFB1","PFKFB2","PFKFB3","PFKFB4","PFKL","PFKM","PFKP","PGAM1","PGAM2","PGK1","PGK2","PGM2L1","PGP","PKLR","PKM","POM121","POM121C","PPP2CA","PPP2CB","PPP2R1A","PPP2R1B","PPP2R5D","PRKACA","PRKACB","PRKACG","RAE1","RANBP2","SEC13","SEH1L","TPI1","TPR")
+Paglycolysis <- Paglycolysis[Paglycolysis %in% rownames(aml.combined)]
+aml.combined <- AddModuleScore(aml.combined, features = list(Paglycolysis), name = "PAglycolysis", assay = "SCT")
+FeaturePlot(aml.combined, "PAglycolysis1")+
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+VlnPlot(aml.combined, features = "PAglycolysis1", split.by = "condition", cols = conditioncols)
+
+
+aeglycolysis <- c("ALDOA","ENO1","GAPDH","GPI","HK1","LDHA","PFKM","PGAM2","PGK1","PKM","SLC2A1","TPI1")
+aeglycolysis <- aeglycolysis[aeglycolysis %in% rownames(aml.combined)]
+aml.combined <- AddModuleScore(aml.combined, features = list(aeglycolysis), name = "aeglycolysis", assay = "SCT")
+FeaturePlot(aml.combined, "aeglycolysis1")+
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+VlnPlot(aml.combined, features = "aeglycolysis1", split.by = "condition", cols = conditioncols)
+
+hscdiff <- c("ATXN1L","KAT7","KITLG","N4BP2L2","PDCD2","THPO")
+hscdiff <- hscdiff[hscdiff %in% rownames(aml.combined)]
+aml.combined <- AddModuleScore(aml.combined, features = list(hscdiff), name = "hscdiff", assay = "SCT")
+FeaturePlot(aml.combined, "hscdiff1")+
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+VlnPlot(aml.combined, features = "hscdiff1", split.by = "condition", cols = conditioncols)
+
+GOhscdiff <- c("ABL1","ACE","BATF","CDK6","EIF2AK2","ERCC2","EXT1","FOXC1","HOXB4","HSPA9","ITCH","LMBR1L","MEOX1","METTL3","MLLT3","N4BP2L2","NFE2L2","OSM","PRKDC","PUS7","SETD1A","SFRP1","SP7","SRF","TAL1","TCF15","TP53","UFL1","XRCC5","YTHDF2")
+GOhscdiff <- GOhscdiff[GOhscdiff %in% rownames(aml.combined)]
+aml.combined <- AddModuleScore(aml.combined, features = list(GOhscdiff), name = "GOhscdiff", assay = "SCT")
+FeaturePlot(aml.combined, "GOhscdiff1")+
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+VlnPlot(aml.combined, features = "GOhscdiff1", split.by = "condition", cols = conditioncols)
+
+
+
+KEGGTCA <- c("ACLY","ACO1","ACO2","CS","DLAT","DLD","DLST","FH","IDH1","IDH2","IDH3A","IDH3B","IDH3G","MDH1","MDH2","OGDH","OGDHL","PC","PCK1","PCK2","PDHA1","PDHA2","PDHB","SDHA","SDHB","SDHC","SDHD","SUCLA2","SUCLG1","SUCLG2","SUCLG2P2")
+KEGGTCA <- KEGGTCA[KEGGTCA %in% rownames(aml.combined)]
+aml.combined <- AddModuleScore(aml.combined, features = list(KEGGTCA), name = "KEGGTCA", assay = "SCT")
+FeaturePlot(aml.combined, "KEGGTCA1")+
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+VlnPlot(aml.combined, features = "KEGGTCA1", split.by = "condition", cols = conditioncols)
+
+
+reactomeTCA <- c("ACO2","CS","DLD","DLST","FAHD1","FH","IDH2","IDH3A","IDH3B","IDH3G","MDH2","ME2","ME3","NNT","OGDH","SDHA","SDHB","SDHC","SDHD","SUCLA2","SUCLG1","SUCLG2")
+reactomeTCA <- reactomeTCA[reactomeTCA %in% rownames(aml.combined)]
+aml.combined <- AddModuleScore(aml.combined, features = list(KEGGTCA), name = "reactomeTCA", assay = "SCT")
+FeaturePlot(aml.combined, "reactomeTCA1")+
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+VlnPlot(aml.combined, features = "reactomeTCA1", split.by = "condition", cols = conditioncols)
+
+drug_res <- c("CDA","CES1","CES2","CES5A","CYP2A13","CYP2A6","CYP2A7","CYP3A4","CYP3A43","CYP3A5","CYP3A7","DPYD","DPYS","GMPS","GUSB","HPRT1","IMPDH1","IMPDH2","ITPA","NAT1","NAT2","TK1","TK2","TPMT","TYMP","UCK1","UCK2","UCKL1","UGT1A1","UGT1A10","UGT1A3","UGT1A4","UGT1A5","UGT1A6","UGT1A7","UGT1A8","UGT1A9","UGT2A1","UGT2A3","UGT2B10","UGT2B11","UGT2B15","UGT2B17","UGT2B28","UGT2B4","UGT2B7","UMPS","UPB1","UPP1","UPP2","XDH")
+drug_res <- drug_res[drug_res %in% rownames(aml.combined)]
+aml.combined <- AddModuleScore(aml.combined, features = list(drug_res), name = "drug_metabolism", assay = "SCT")
+FeaturePlot(aml.combined, "drug_metabolism1")+
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+VlnPlot(aml.combined, features = "drug_metabolism1", split.by = "condition", cols = conditioncols)
+
+
+PA_p53_G1arrest <- c("ARID3A","CCNA1","CCNA2","CCNE1","CCNE2","CDK2","CDKN1A","CDKN1B","E2F1","E2F7","E2F8","PCBP4","TP53","ZNF385A")
+PA_p53_G1arrest <- PA_p53_G1arrest[PA_p53_G1arrest %in% rownames(aml.combined)]
+aml.combined <- AddModuleScore(aml.combined, features = list(PA_p53_G1arrest), name = "PA_p53_G1arrest", assay = "SCT")
+FeaturePlot(aml.combined, "PA_p53_G1arrest1")+
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+VlnPlot(aml.combined, features = "PA_p53_G1arrest1", split.by = "condition", cols = conditioncols)
+
+GO_p53_DNA_Damage_respone<- c("ATM","CASP2","CDKN1A","CDKN1B","CHEK2","CRADD","GML","GTSE1","MDM2","MUC1","PIDD1","PLK2","PLK3","PML","PRAP1","RPL26","TP53","TRIAP1")
+GO_p53_DNA_Damage_respone <- GO_p53_DNA_Damage_respone[GO_p53_DNA_Damage_respone %in% rownames(aml.combined)]
+aml.combined <- AddModuleScore(aml.combined, features = list(GO_p53_DNA_Damage_respone), name = "GO_p53_DNA_Damage_respone", assay = "SCT")
+FeaturePlot(aml.combined, "GO_p53_DNA_Damage_respone1")+
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+VlnPlot(aml.combined, features = "GO_p53_DNA_Damage_respone1", split.by = "condition", cols = conditioncols)
+
+multidrugres <- c("ACADS","ADAM15","ANXA2P2","BABAM2","BCAP31","BCL7B","BLVRB","C1orf35","C22orf46","CASP4","CCDC92","CCHCR1","CCS","CD151","CDK11B","CDKN2C","CRIP2","CYTH1","DNALI1","DOCK9","DXO","ENC1","FBXO11","FN1","FOXP3","GGA2","GSTK1","GUK1","H2BC20P","HDAC1","HFE","HGSNAT","HHAT","HSPB1","IBSP","ICAM3","IGHV5-51","INPP5B","IQGAP1","IZUMO4","KCTD17","KLRF1","LAMTOR2","LRRC14","MAGOHB","MAN1B1","MAPK12","MARCHF2","MCUB","MEAK7","MED8","MSRB1","MYO1F","NXT2","OAS1","ODF2","PCTP","PDLIM5","PEX10","PHF1","PPIEL","PPP4C","PTHLH","RINT1","RPL23","SBNO2","SIL1","SLC25A13","SLC48A1","STYXL1","TAF12","TBX1","TEDC2","TMED10","TMEM104","TP53TG1","TSPAN31","TSPAN8","UFC1","USE1","VPS33B","ZNF668","ZSWIM8-AS1")
+multidrugres <- multidrugres[multidrugres %in% rownames(aml.combined)]
+aml.combined <- AddModuleScore(aml.combined, features = list(multidrugres), name = "multidrugres", assay = "SCT")
+FeaturePlot(aml.combined, "multidrugres1")+
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+VlnPlot(aml.combined, features = "multidrugres1", split.by = "condition", cols = conditioncols)
+
+DotPlot(aml.combined, features = c("PA_GO_early_G1", "aeglycolysis1", "PAglycolysis1", "cxcr41", "g0e1", "phoxox1", "hscdiff1", "GOhscdiff1", "KEGGTCA1", "reactomeTCA1"), split.by = "condition",  cols = c("blue", "red"), assay = "SCT") + RotatedAxis()
+
+DotPlot(aml.combined, features = reactomeTCA, split.by = "condition",  cols = c("blue", "red"), assay = "SCT") + RotatedAxis()
+DotPlot(aml.combined, features =GO.phosox, split.by = "condition",  cols = c("blue", "red"), assay = "SCT") + RotatedAxis()
+DotPlot(aml.combined, features =c("CXCR4", "ITGB2", "CDH2", "CD44",  "ITGAL", "ACKR3",  "CD244", "CD96", "IL2RA", "IL3RA", "CD47", "CLEC12A", "CD200", "HAVCR2", "CD70", "KLRK1", "DRD2", "CD27","ULBP2", "THY1","PTPRC", "CD9"), split.by = "condition",  cols = c("blue", "red"), assay = "SCT") + RotatedAxis()
+DotPlot(aml.combined, features = c("CXCR4", "ITGB2", "CDH2", "CD44",  "ITGAL", "ACKR3",  "CD244", "CD96", "IL2RA", "IL3RA", "CD47", "CLEC12A", "CD200", "HAVCR2", "CD70", "KLRK1", "DRD2", "CD27","ULBP2", "THY1","PTPRC", "CD9"), assay = "SCT")
+for (i in newfeatures){DefaultAssay(aml.combined) <- "SCT"
+print(FeaturePlot(aml.combined, features = i)+
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu"))))
+DefaultAssay(aml.combined) <- "integrated"}
+
+
+
+DoHeatmap(aml.combined, features = GO.phosox, assay = "SCT",group.colors = clustercols, )
+VlnPlot(aml.combined, features = "phoxox1", split.by = "condition", group.by = "projections", cols = conditioncols)
+
+dev.off()
+
+pdf(paste0(results, "signatures2.pdf"))
+signatures <-  c("PA_GO_early_G1", "aeglycolysis1", "PAglycolysis1", "cxcr41", "g0e1", "phoxox1", "hscdiff1", "GOhscdiff1", "KEGGTCA1", "reactomeTCA1", "drug_metabolism1","GO_p53_DNA_Damage_respone1","PA_p53_G1arrest1" )
+aml.combined$cluster_condition <- factor(paste(aml.combined$newcluster, aml.combined$condition, sep = "."))
+names(clustercols) <- unique(aml.combined$newcluster)
+clustercols1 <- clustercols[order(as.character(names(clustercols)))]
+names(clustercols1) <- NULL
+for (i in signatures){
+  print(RidgePlot(aml.combined, features = i, ncol = 2, assay = "SCT", cols = rep(clustercols1,each = 2), group.by = "cluster_condition") + theme(legend.position = "none"))
+}
+DotPlot(aml.combined, features = signatures, split.by = "condition",  cols = conditioncols, assay = "SCT") + RotatedAxis()
+dev.off()
+
+```
+## Signature figs
+```{r}
+sig_names <- c("Reactome: G0 and early G1", "GO: G0 to G1 Transition", "WikiPathways: Aerobic Alycolysis", "Reactome: Glycolysis",  "KEGG: Drug Metabolism - Other enzymes" , "GO: DNA damage Response Signal Transduction by P53 Resulting in Cell Cycle Arrest", "Reactome: TP53Regulates Transcription of Genes Involved in G1 Cell Cycle Arrest")
+sig_names2 <- c("PA: G0 and early G1", "GO: G0 to G1", "WP:Aerobic Glycolysis", "PA: Glycolysis",   "KEGG: Drug Metabolism", "GO: p53 DNA dam. resp.", "PA: TP53 G1 arrest" )
+signatures <- c("PA_GO_early_G1", "g0e1","aeglycolysis1", "PAglycolysis1",  "drug_metabolism1","GO_p53_DNA_Damage_respone1","PA_p53_G1arrest1")
+pdf(paste0(results, "signatures_selected_dotplot.pdf"), width =  16, height = 5)
+
+DotPlot(aml.combined, features = signatures, split.by = "condition",  cols = conditioncols, assay = "SCT") + RotatedAxis() +
+  scale_x_discrete(labels = sig_names2) + 
+  xlab("Signatures") +
+  coord_flip()
+dev.off()
+
+lista <- list()
+for (i in 1:length(signatures)){
+  lista[[i]] <- RidgePlot(aml.combined, features = signatures[i], ncol = 2, assay = "SCT", cols = rep(clustercols1,each = 2), group.by = "cluster_condition") + 
+    ggtitle("" ) +
+    theme(legend.position = "none", title = element_text(size = 0)) + 
+    scale_y_discrete(limits = c(paste(rep(unique(aml.combined$newcluster),each =2), c("Dx", "REL"), sep =  ".")))
+}
+
+pdf(paste0(results, "Ridge_signatures_selected.pdf"), height = 20, width = 20)
+grid.arrange(grobs = lapply(lista, "+", theme(plot.margin=margin(100,10,10,10))), ncol = 4, )
+dev.off()
+
+
+
+lista <- list()
+for (i in 1:length(signatures)){
+  lista[[i]] <- FeaturePlot(aml.combined, features = signatures[i]) + scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu"))) + 
+    ggtitle("" )
+}
+pdf(paste0(results, "UMAP_signatures_selected.pdf"), height = 20, width = 40)
+grid.arrange(grobs = lapply(lista, "+", theme(plot.margin=margin(100,10,10,10))), ncol = 4, )
+dev.off()
+
+```
+### MArkers
+```{r}
+markers<- c("CXCR4", "ITGB2", "CDH2", "CD44",  "ITGAL", "ACKR3",  "CD244", "CD96", "IL2RA", "IL3RA", "CD47", "CLEC12A", "CD200", "HAVCR2", "CD70", "KLRK1", "DRD2", "CD27","ULBP2", "THY1","PTPRC", "CD9")
+markers = markers[markers %in% rownames(aml.combined)]
+DotPlot(aml.combined, features = markers, assay = "SCT", split.by = "condition",  cols = conditioncols) + RotatedAxis() 
+DotPlot(aml.combined, features = markers, assay = "SCT", group.by =  "condition",  cols =  c("blue", "red")) + RotatedAxis() 
+for(i in markers){
+print(VlnPlot(aml.combined, features =i, split.by = "condition", cols = conditioncols, assay = "SCT"))
+}
+
+pdf(paste0(results, "LSC_marker_clustering.pdf"), width =  12, height = 5)
+DotPlot(aml.combined, features = markers, assay = "SCT",cluster.idents = T) + RotatedAxis()+ scale_colour_gradient2(low = "blue", mid = "white", high = "red")
+dev.off()
+
+
+```
+
+
+
+
+#LSC signatures
+```{r}
+pdf(paste0(results, "LSCsignatures.pdf"))
+LSC17 <- c("GPR56", "AKR1C3", "CD34", "NGRFAP1", "SMIM24", "SOCS2", "CPXM1", "CDK6", "KIAA0125", "DPYSL3", "MMRN1", "LAPTM4B", "ARHGAP22", "NYNRIN", "ZBTB46", "DNMT3B")
+LSC17 <- LSC17[LSC17 %in% rownames(aml.combined)]
+aml.combined <- AddModuleScore(aml.combined, features = list(LSC17), name = "LSC17", assay = "SCT")
+FeaturePlot(aml.combined, "LSC171")+
+          scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+VlnPlot(aml.combined, features = "LSC171", split.by = "condition", cols = conditioncols)
+RidgePlot(aml.combined, features = "LSC171", cols = rep(clustercols1,each = 2), group.by = "cluster_condition") + theme(legend.position = "none")+ 
+    scale_y_discrete(limits = c(paste(rep(unique(aml.combined$newcluster),each =2), c("Dx", "REL"), sep =  ".")))
+
+
+
+
+
+
+
+library(RColorBrewer)
+
+LSC_signature <- list(c("FSHD4","CD34","ADGRG1","SOCS2","SPINK2","FAM30A"))
+filtered_data <- aml.combined@assays$SCT@scale.data[which(rownames(aml.combined@assays$SCT@scale.data)%in%unlist(LSC_signature)),]
+rownames(filtered_data)
+Elsayed_model <- function(x){
+  x[1]*0.0171 + x[2]*0.109 + x[3]*0.141 + x[4]*0.0516 + x[5]*0.054# + x[6]*0.189
+  }
+cells_scores <- apply(filtered_data,2,function(x)Elsayed_model(x))
+aml.combined <- AddMetaData(object = aml.combined, metadata = cells_scores, col.name = "Elsayed_LSC_score")
+#VlnPlot(aml.combined,features = "Elsayed_LSC_score") + geom_boxplot()
+#FeaturePlot(aml.combined, "Elsayed_LSC_score")+
+            #scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+
+LSC_signature <-c("FSHD4","CD34","ADGRG1","SOCS2","SPINK2","FAM30A")
+LSC_signature <- LSC_signature[LSC_signature %in% rownames(aml.combined)]
+aml.combined <- AddModuleScore(aml.combined, features = list(LSC_signature), name = "LSC6", assay = "SCT")
+FeaturePlot(aml.combined, "LSC61")+
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+VlnPlot(aml.combined, features = "LSC61", split.by = "condition", cols = conditioncols)
+RidgePlot(aml.combined, features = "LSC61", cols = rep(clustercols1,each = 2), group.by = "cluster_condition") + theme(legend.position = "none")+ 
+    scale_y_discrete(limits = c(paste(rep(unique(aml.combined$newcluster),each =2), c("Dx", "REL"), sep =  ".")))
+dev.off()
+aml.combined$LSC17 <- aml.combined$LSC171
+aml.combined$LSC6 <- aml.combined$LSC61
+pdf(paste0(results, "LSCsignatures_dotplot.pdf"), height = 3, width= 12)
+DotPlot(aml.combined, features = c("LSC6", "LSC17"), assay = "SCT", split.by =  "condition",  cols =  conditioncols) + RotatedAxis() + coord_flip() 
+dev.off()
+
+```
+
+
+
+
+
+
+
+
+```{r}
+enrichment<- readRDS(paste0(results, "conserved_enrichment_ALL.rds"))
+library(enrichplot)
+pdf(paste0(results, "enrichment_conserved_ALL.pdf"), width = 12, height = 10)
+
+dotplot(enrichment$GO,  font.size = 12, label_format = 100, title = "GO")+ scale_x_discrete(labels = unique(enrichment$GO@compareClusterResult$Cluster))
+dotplot(enrichment$KEGG,  font.size = 12, label_format = 100, title = "KEGG") + scale_x_discrete(labels = unique(enrichment$KEGG@compareClusterResult$Cluster))  
+dotplot(enrichment$PA,  font.size =12, label_format = 80,title = "ReactomePA", showCategory = 5) + scale_x_discrete(labels = unique(enrichment$PA@compareClusterResult$Cluster))
+dev.off()
+
+library(clusterProfiler)
+pdf(paste0(results, "Treeplots_enrichmentNormal.pdf"))
+ asdf <- pairwise_termsim(enrichment$GO)
+ treeplot(asdf, showCategory=15, nCluster =25)
+ asdf <- pairwise_termsim(enrichment$KEGG)
+ treeplot(asdf, showCategory=15, nCluster =25)
+  asdf <- pairwise_termsim(enrichment$PA)
+  enrichplot::treeplot(asdf, showCategory=20, nCluster =25,  hilight = T, offset_tiplab = -100, offset = 30)
+  dev.off()
+```
+
+```{r}
+patients <- c("AML7.10", "AML9.13", "AML14.15","AML16.17" )
+lista <- list()
+for (i in unique(patients)){
+  lista[[c(length(lista)+1)]] <-DimPlot(aml.combined, cells = colnames(aml.combined)[aml.combined$patient == i], cols = clustercols, pt.size = 1.05) + theme(legend.position = "none", title= element_text(size = 0))
+
+  lista[[c(length(lista)+1)]] <-DimPlot(aml.combined, group.by = "patient_paired_cluster", cells = colnames(aml.combined)[aml.combined$patient == i], cols = patientclustercol, pt.size = 1.05) + theme(legend.position = "none", title= element_text(size = 0))
+
+  lista[[c(length(lista)+1)]] <-DimPlot(aml.combined, group.by = "samplecluster", cells = colnames(aml.combined)[aml.combined$patient == i & aml.combined$condition == "Dx"],cols =  sampleclustercol, pt.size = 1.05) + theme(legend.position = "none", title= element_text(size = 0))
+
+  lista[[c(length(lista)+1)]] <-DimPlot(aml.combined, group.by = "samplecluster", cells = colnames(aml.combined)[aml.combined$patient == i & aml.combined$condition == "REL"], cols = sampleclustercol, pt.size = 1.05)  + theme(legend.position = "none", title= element_text(size = 0))
+
+  
+}
+library(gridExtra)
+pdf(paste0(results, "cluster_distribution.pdf"), height = 40, width = 35)
+grid.arrange(grobs =lapply(lista, "+", theme(plot.margin=margin(200,10,10,10))), ncol=4)
+dev.off()
+```
+```{r}
+aml.combined <-  PrepSCTFindMarkers(aml.combined, assay = "SCT")
+markerlist <-FindAllMarkers(aml.combined, only.pos = T, min.pct = 0.15, logfc.threshold = 0.25, assay = "SCT")
+library(openxlsx)
+write.xlsx(markerlist, paste0(results, "cluster markers.xlsx"))
+```
+
+
+```{r}
+
+```
+

@@ -1,0 +1,343 @@
+---
+title: "AML2 CD34pos"
+author: "Joseba Elizazu"
+date: '2022-03-15'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(ggpubr)
+library(dplyr)
+library(Seurat)
+library(patchwork)
+
+```
+
+```{r}
+sample <- "AML10_CD34pos"
+data <- Read10X(paste0("./data/",sample,"/filtered_feature_bc_matrix"))
+datapre <- CreateSeuratObject(data, project = sample)
+datapre
+
+
+
+datapre[["percent.mt"]] <- PercentageFeatureSet(datapre, pattern = "^MT-")
+
+
+VlnPlot(datapre, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+plot1 <- FeatureScatter(datapre, feature1 = "nCount_RNA", feature2 = "percent.mt") 
+plot2 <- FeatureScatter(datapre, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot2 +  geom_hline(yintercept=c(1500,5500)) + geom_vline(xintercept = 35000)
+plot1  + geom_vline(xintercept = 35000) + geom_hline(yintercept = 20)
+datapre <- subset(datapre, subset = nFeature_RNA > 1500 & nFeature_RNA < 5500 & percent.mt < 20 & nCount_RNA <35000 & nCount_RNA > 2000)
+
+## Normalization
+datapre <- SCTransform(datapre, vars.to.regress = c("percent.mt"), verbose = FALSE, variable.features.n = 3000)
+
+## Clustering
+datapre <- RunPCA(datapre, verbose = FALSE)
+VizDimLoadings(datapre, dims = 1:4, reduction = "pca")
+ElbowPlot(datapre, ndims = 40) # Me he quedado con los 14 primeros
+DimHeatmap(datapre, dims = 1:22, cells = 500, balanced = TRUE) 
+print(x = datapre[["pca"]], 
+      dims = 1:22, 
+      nfeatures = 5)
+
+dims =  14
+
+
+```
+## Seurat clusters
+```{r, eval = F}
+res <- c(0.4, 0.6, 0.8, 1.0, 1.4,2)
+datapre <- FindNeighbors(datapre, dims = 1:dims, verbose = FALSE)
+datapre <- FindClusters(datapre, verbose = FALSE, resolution = res) #varios clusters con diferentes resoluciones para compararlos 
+datapre <- RunUMAP(datapre, dims = 1:dims, verbose = FALSE)
+
+```
+## cluster stabillity
+```{r, eval = T}
+library(scran)
+library(BiocNeighbors)
+data.use <- Embeddings(object = datapre[["pca"]])
+data.use <- data.use[, 1:dims]
+
+
+myClusterFUN <- function(x, res) {
+  g <- bluster::makeSNNGraph(x,
+                             type="jaccard",
+                             k = 20,
+                             BNPARAM = AnnoyParam())
+  igraph::cluster_louvain(g, resolution = res)$membership # 0.4
+}
+
+
+res = c(0.2,0.4,0.5,0.6,0.7,0.8,1,1.2,1.4,1.6)
+
+ 
+ listcluster <- list()
+ 
+ listboot <- list()
+ set.seed(1312)
+ 
+ for (i in unique(c(res, res*2))){
+   listcluster[[as.character(i)]] <-  datapre@meta.data[as.character(i)] <- myClusterFUN(data.use, res = i)
+   listboot[[as.character(i)]] <- bluster::bootstrapStability(data.use,
+                                                   FUN = myClusterFUN,
+                                                   #transposed = TRUE, # TRUE reproduce el error del issue, = FALSE parece que funciona bien
+                                                   clusters = listcluster[[as.character(i)]],
+                                                   iterations = 25,
+                                                   res = i)
+  
+   print(pheatmap::pheatmap(listboot[[as.character(i)]], cluster_row=FALSE, cluster_col=FALSE, color=viridis::magma(100), breaks=seq(-1, 1, length.out=101))) 
+
+ 
+ }
+ 
+ ## Selected
+ datapre@meta.data$newcluster <- listcluster[["0.5"]]
+
+ Idents(object = datapre) <- "newcluster"
+
+ for (i in names(listcluster)){
+    print(pheatmap::pheatmap(listboot[[as.character(i)]], cluster_row=FALSE, cluster_col=FALSE, color=viridis::magma(100), breaks=seq(-1, 1, length.out=101))) 
+
+ }
+
+```
+
+
+
+
+```{r}
+listofres <- list()
+listofDEpercluster <- list()
+listofFirstDE <- list()
+plotlist<-list()
+# loop para encontrar los markers para cada resolución y anotar resultados en listas
+for (i in names(listcluster)){ 
+  Idents(object = datapre) <- as.character(i)
+  datapre <- RunUMAP(datapre, dims = 1:dims, verbose = FALSE)
+  plotlist[[as.character(i)]]<-print(DimPlot(datapre,
+        reduction = "umap",
+        label = TRUE,
+        label.size = 6))
+  data.markers <- FindAllMarkers(datapre, only.pos = T, min.pct = 0.15, logfc.threshold = 0.25)
+  df <- data.markers %>%
+    group_by(cluster) %>%
+    slice_max(n = 4, order_by = avg_log2FC)
+  listofres[[as.character(i)]] <- df
+  listofFirstDE[[as.character(i)]] <- (table(df$gene))
+  listofDEpercluster[[as.character(i)]]<-(table(data.markers$cluster))
+  }
+listofDEpercluster # cantidad de markers por cluster en diferentes resoluciones. Me quedaría con res = 1 o 0.4 por tener el mínimo número de markers en un cluster más alto
+listofFirstDE # ordenados por el pvalor, markers repetidos en diferentes clusters entre los 4 primeros. Me quedaría con res = 1 por cantidad de genes y por las pocas repeticiones o con 0.4 por el ausencia de repeticiones, aun habiendo menor número de clusters
+listofres #df con los primeros 4 genes de cada cluster. En ninguno me ha parecido ver marcadores de BM stem cell anotados en cellmarker
+# SIGO CON RES =1
+plotlist
+# Idents(object = datapre) <- "SCT_snn_res.1.4"
+VlnPlot(datapre, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+DimPlot(datapre,
+        reduction = "umap",
+        label = TRUE,
+        label.size = 6) 
+# Me quedo con resolution = 0.4. Pero entre los markers hay muchos genes mitocondriales y presudogenes. comprobar filtering y PCA
+
+
+
+
+```
+
+
+
+# Projections
+
+```{r}
+library(openxlsx)
+library(stringr)
+velten = read.xlsx("Velten_projections.xlsx")
+velten <- velten[which(velten$sample == str_remove(sample, "pos")),]
+velten$X1 = gsub("\\-0.*","",velten$X1)
+rownames(velten) = velten$X1
+velten <- velten[colnames(datapre),]
+all(rownames(velten) %in% colnames(datapre) )
+length(colnames(datapre)) == nrow(velten)
+#velten = na.omit(velten)
+rownames(velten) = colnames(datapre)
+all(rownames(velten) %in% colnames(datapre) )
+all(rownames(velten) == colnames(datapre) )
+length(colnames(datapre)) == nrow(velten)
+celltypes <- velten$celltype
+names(celltypes) <- rownames(velten)
+
+celltypes <- factor(celltypes)
+
+cellcolors <- read.xlsx("veltencolors.xlsx")
+rownames(cellcolors) = cellcolors[,1]
+cellcolors <- cellcolors[levels(celltypes),]
+
+colors <- cellcolors$cols
+datapre <- AddMetaData(object = datapre, metadata = factor(celltypes), col.name = "projections")
+
+
+
+
+
+
+ datapre@meta.data$newcluster <- listcluster[["1"]] #2, 1
+
+ Idents(object = datapre) <- "newcluster"
+
+plot1 <- DimPlot(datapre, reduction = "umap",  label = TRUE,
+                 group.by = "projections", label.size = 2, pt.size = 1.1, cols = colors) +
+  theme(legend.text = element_text(size = 5),
+        #legend.key.size = unit(0, "cm"),
+        legend.key.height = unit(1, "cm"))
+plot2 = DimPlot(datapre,
+        reduction = "umap",
+        label = TRUE,
+        label.size = 6,
+        pt.size = 1.1)
+plot1 + plot2
+
+
+
+
+metadata <- (datapre@meta.data)
+metadata$seurat_clusters <- factor(metadata$newcluster)
+metadata$projections <- factor(metadata$projections)
+df <- as.data.frame(matrix(ncol=length(levels(metadata$projections)), nrow=0))
+names(df) <- levels(metadata$projections)
+
+for (i in levels(metadata$seurat_clusters)) {
+  clusters <- c(table(metadata$projections[which(metadata$seurat_clusters == i)]))
+  df[i,] <- clusters
+}
+df$total <- rowSums(df)
+df[1:(ncol(df)-1)] = df/df$total
+df[df== 0] <- NA
+View(df)# proporción 
+```
+
+
+
+# Enrichment
+
+```{r}
+data.markers <- FindAllMarkers(datapre, only.pos = T, min.pct = 0.25, logfc.threshold = 0.25)
+top100 <- data.markers %>% group_by(cluster) %>% top_n(n = 100, wt = avg_log2FC) # Visto en algún tutorial y foro, me quedo con los primeros 100 genes
+top100pval <- subset(top100, rowSums(top100[5] < 0.05) > 0)
+
+library("clusterProfiler")
+library("org.Hs.eg.db")
+library("AnnotationHub")
+df <- top100pval[,7:6]
+dfsample <- split(df$gene,df$cluster)
+length(dfsample) 
+
+
+
+genelist = list()
+for (i in 1:length(dfsample)){
+  dfsample[[i]] <- bitr(dfsample[[i]], fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db")
+  genelist[[i]] <- dfsample[[i]]$ENTREZID
+}
+names(genelist)=names(dfsample)
+
+GOclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichGO", OrgDb = "org.Hs.eg.db")
+dotplot(GOclusterplot)
+View(GOclusterplot@compareClusterResult)
+
+KEGGclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichKEGG")
+dotplot(KEGGclusterplot)
+View(KEGGclusterplot@compareClusterResult)
+
+ library(ReactomePA)
+PAclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichPathway")
+dotplot(PAclusterplot)
+View(PAclusterplot@compareClusterResult)
+
+
+# Hay algunos clusters que se me quedan sin pathways, me pasa en todas las pruebas que he hecho
+# Es posible que el cluster 5 sean células mitóticas? Me gusta el cluster 8 por el NFK-B signalling pathway y hematopoietic cell lineage
+```
+
+
+
+# Export results
+
+```{r}
+dir.create("results");dir.create("./results/separated")
+results <- paste0("./results/separated/", sample,"/")
+dir.create(results)
+library(openxlsx)
+dataexport <- datapre@meta.data
+dataexport = dataexport[,c(names(dataexport)[1:6],"newcluster","projections")]
+write.xlsx(dataexport, paste0(results,"metadata.xlsx"))
+
+
+
+metadata <- (datapre@meta.data)
+metadata$projections <- addNA(metadata$projections)
+
+metadata$seurat_clusters <- factor(metadata$newcluster)
+#metadata$projections <- factor(metadata$projections)
+df <- as.data.frame(matrix(ncol=length(levels(metadata$projections)), nrow=0))
+names(df) <- levels(metadata$projections)
+
+for (i in levels(metadata$seurat_clusters)) {
+  clusters <- c(table(metadata$projections[which(metadata$seurat_clusters == i)]))
+  df[i,] <- clusters
+}
+df$total <- rowSums(df)
+df = rbind(df, Total = colSums(df))
+df[1:(nrow(df)-1),1:(ncol(df)-1)] = df/df$total
+df[df== 0] <- NA
+names(df)[length(levels(metadata$projections))] = "Missing"
+write.xlsx(df, paste0(results,"projections.xlsx"))
+write.xlsx(data.markers, paste0(results,"Markers.xlsx"))
+
+pdf(paste(results,"enrichmentAnalysis.pdf"))
+
+
+
+enrichlist <- list(GO = GOclusterplot@compareClusterResult,
+                   KEGG = KEGGclusterplot@compareClusterResult,
+                   Reactome = PAclusterplot@compareClusterResult)
+write.xlsx(enrichlist, paste0(results,"enrichment.xlsx"))
+
+
+pdf(paste0(results,"UMAP.pdf"))
+DimPlot(datapre,
+        reduction = "umap",
+        label = TRUE,
+        label.size = 6) 
+dev.off()
+
+plot1 <- DimPlot(datapre, reduction = "umap",  label = F,
+                 group.by = "projections", label.size =0, pt.size = 0.5, cols = colors)
+plot2 = DimPlot(datapre,
+        reduction = "umap",
+        label = TRUE,
+        label.size = 3,
+        pt.size = 0.5)
+plot1 + plot2
+
+pdf(paste0(results,"ProjectionsUMAP.pdf"))
+plot1  +
+  theme(legend.position = "none")  +  plot2 
+plot1 +   theme(legend.text = element_text(size = 5),
+        #legend.key.size = unit(0, "cm"),
+        legend.key.height = unit(1, "cm"))
+plot2
+dev.off()
+
+
+saveRDS(datapre, paste0(results, sample,".rds"))
+
+```

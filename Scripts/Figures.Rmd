@@ -1,0 +1,442 @@
+---
+title: "TFM figures"
+author: "Joseba Elizazu"
+date: '2022-05-26'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Separated
+```{r}
+library(ggpubr)
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(openxlsx)
+library(stringr)
+library(grid)
+library(gridExtra)
+#aml.combined@meta.data$projections <- factor(aml.combined@meta.data$projections)
+cellcolors <- read.xlsx("veltencolors.xlsx")
+rownames(cellcolors) = cellcolors[,1]
+exportdir <- "./results/separated/figures/"
+dir.create(exportdir)
+```
+
+```{r}
+samples <- c("AML7_CD34pos", "AML10_CD34pos", "AML9_CD34pos","AML13_CD34pos" , "AML14_CD34pos", "AML15_CD34pos","AML16_CD34pos","AML17_CD34pos")
+
+
+figures <- function(x){
+  directory <- paste0("./results/separated/",x,"/" )
+  data <- readRDS(paste0(directory, x,".rds"))
+  
+  cellcolors <- cellcolors[levels(data@meta.data$projections),]
+  colors <- cellcolors$cols
+  clustercols <- DiscretePalette(length(unique(Idents(data))), palette = "glasbey")
+  plots <- list()
+  plots$p1 <- DimPlot(data, 
+                      cols = clustercols, 
+                      label = F) + ggtitle(str_remove(x, "_CD34")) + theme(legend.position = "none", title= element_text(size = 0))
+  plots$p2 <- DimPlot(data, group.by = "projections", cols = colors, label = F) + theme(legend.position = "none") + ggtitle("") + xlab(NULL) + ylab(NULL)
+  plots
+}
+
+library(parallel)
+numCores <- parallel::detectCores()
+listplots <- mclapply(X = samples, FUN = figures, mc.cores = numCores)
+names(listplots) <- samples
+listplots
+plot <- listplots$AML10_CD34pos$p1
+legend <- cowplot::get_legend(listplots$AML10_CD34pos$p1)
+
+lista <- list()
+for ( i in names(listplots)){
+  lista[[length(lista)+1]] <- listplots[[i]]$p1
+  lista[[length(lista)+1]] <- listplots[[i]]$p2
+}
+pdf(paste0(exportdir, "dimplots.pdf"), height = 35, width = 10)
+grid.arrange(grobs =lapply(lista, "+", theme(plot.margin=margin(20,10,10,10))), ncol=2)
+dev.off()
+
+
+```
+#### legend
+```{r}
+samples <- c("AML7_CD34pos", "AML10_CD34pos", "AML9_CD34pos","AML13_CD34pos" , "AML14_CD34pos", "AML15_CD34pos","AML16_CD34pos","AML17_CD34pos")
+
+
+figures <- function(x){
+  directory <- paste0("./results/separated/",x,"/" )
+  data <- readRDS(paste0(directory, x,".rds"))
+  
+  cellcolors <- cellcolors[levels(data@meta.data$projections),]
+  colors <- cellcolors$cols
+  clustercols <- DiscretePalette(length(unique(Idents(data))), palette = "glasbey")
+  plots <- list()
+  plots$p1 <- DimPlot(data, 
+                      cols = clustercols, 
+                      label = F) #+ ggtitle(str_remove(x, "_CD34")) + theme(legend.position = "none", title= element_text(size = 0))
+  plots$p2 <- DimPlot(data, group.by = "projections", cols = colors, label = F) #+ theme(legend.position = "none") + ggtitle("") + xlab(NULL) + ylab(NULL)
+  plots
+}
+
+library(parallel)
+numCores <- parallel::detectCores()
+listplots <- mclapply(X = samples, FUN = figures, mc.cores = numCores)
+names(listplots) <- samples
+listplots
+plot <- listplots$AML10_CD34pos$p1
+legend <- cowplot::get_legend(listplots$AML10_CD34pos$p1)
+
+
+
+pdf(paste0(exportdir,"legend.pdf"))
+grid.newpage()
+grid.draw(legend)
+dev.off()
+
+legend <- cowplot::get_legend(listplots$AML15_CD34pos$p2)
+pdf(paste0(exportdir,"legend_Projections.pdf"), width = 12)
+grid.newpage()
+grid.draw(legend)
+dev.off()
+
+```
+
+### Enrichment
+```{r}
+samples <- c("AML7_CD34pos", "AML10_CD34pos", "AML9_CD34pos","AML13_CD34pos" , "AML14_CD34pos", "AML15_CD34pos","AML16_CD34pos","AML17_CD34pos")
+
+
+figures <- function(x){
+  results <- paste0("./results/separated/",x,"/" )
+  aml.combined <- readRDS(paste0(results, x,".rds"))
+  data.markers <- FindAllMarkers(aml.combined, only.pos = T, min.pct = 0.15, logfc.threshold = 0.25)
+  top100 <- data.markers %>% group_by(cluster) %>% top_n(n = 100, wt = avg_log2FC) # Visto en algún tutorial y foro, me quedo con los primeros 100 genes
+  top100pval <- subset(top100, rowSums(top100[5] < 0.05) > 0)
+  
+  library("clusterProfiler")
+  library("org.Hs.eg.db")
+  library("AnnotationHub")
+  df <- top100pval[,7:6]
+  dfsample <- split(df$gene,df$cluster)
+  length(dfsample) 
+  
+  
+  
+  genelist = list()
+  for (i in 1:length(dfsample)){
+    dfsample[[i]] <- bitr(dfsample[[i]], fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db")
+    genelist[[i]] <- dfsample[[i]]$ENTREZID
+    }
+  names(genelist)=names(dfsample)
+  
+  GOclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichGO", OrgDb = "org.Hs.eg.db")
+
+  
+  
+  KEGGclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichKEGG")
+
+  
+   library(ReactomePA)
+  PAclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichPathway")
+  PAclusterplot@compareClusterResult$Description <- stringr::str_remove(string = PAclusterplot@compareClusterResult$Description, pattern = "Homo sapiens\r: ")
+
+  
+  saveRDS(list(G= GOclusterplot, KEGG = KEGGclusterplot, PA = PAclusterplot), paste0(results, "enrichment normal.rds"))
+  
+  pdf(paste0(results, "enrichment normal.pdf"), width = 10)
+  print(dotplot(GOclusterplot,  font.size = 6, label_format = 100, title = "GO"))
+  print(dotplot(KEGGclusterplot,  font.size = 6, label_format = 100, title = "KEGG"))
+  print(dotplot(PAclusterplot,  font.size = 6, label_format = 80,title = "ReactomePA", showCategory = 5))
+  dev.off()
+}
+
+library(parallel)
+numCores <- parallel::detectCores()
+listplots <- mclapply(X = samples, FUN = figures, mc.cores = numCores)
+names(listplots) <- samples
+listplots
+plot <- listplots$AML10_CD34pos$p1
+legend <- cowplot::get_legend(listplots$AML10_CD34pos$p1)
+
+lista <- list()
+for ( i in names(listplots)){
+  lista[[length(lista)+1]] <- listplots[[i]]$p1
+  lista[[length(lista)+1]] <- listplots[[i]]$p2
+  }
+pdf(paste0(exportdir, "dimplots.pdf"), height = 35, width = 10)
+grid.arrange(grobs =lapply(lista, "+", theme(plot.margin=margin(20,10,10,10))), ncol=2)
+dev.off()
+
+
+```
+# Paired
+```{r}
+library(ggpubr)
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(openxlsx)
+library(stringr)
+library(grid)
+library(gridExtra)
+#aml.combined@meta.data$projections <- factor(aml.combined@meta.data$projections)
+cellcolors <- read.xlsx("veltencolors.xlsx")
+rownames(cellcolors) = cellcolors[,1]
+exportdir <- "./results/integrated/figures/"
+dir.create(exportdir)
+```
+## General and projections
+```{r}
+samples <- c("AML7.10", "AML9.13", "AML14.15","AML16.17" )
+
+
+figures <- function(x){
+  directory <- paste0("./results/integrated/",x,"_CD34/" )
+  data <- readRDS(paste0(directory, x,"_integrated.rds"))
+  
+  cellcolors <- cellcolors[levels(data@meta.data$projections),]
+  colors <- cellcolors$cols
+  clustercols <- DiscretePalette(length(unique(Idents(data))), palette = "alphabet2")
+  plots <- list()
+  plots$p1 <- DimPlot(data, cols = clustercols, label = F) + ggtitle(str_remove(x, "_CD34")) + theme(legend.position = "none", title= element_text(size = 0))
+  plots$p2 <- DimPlot(data, group.by = "projections", cols = colors, label = F) + theme(legend.position = "none") + ggtitle("") + xlab(NULL) + ylab(NULL)
+  plots
+}
+
+library(parallel)
+numCores <- parallel::detectCores()
+listplots <- mclapply(X = samples, FUN = figures, mc.cores = numCores)
+names(listplots) <- samples
+
+
+lista <- list()
+for ( i in names(listplots)){
+  lista[[length(lista)+1]] <- listplots[[i]]$p1
+  lista[[length(lista)+1]] <- listplots[[i]]$p2
+}
+pdf(paste0(exportdir, "dimplotsCluster_projections.pdf"), height = 25, width = 15)
+grid.arrange(grobs =lapply(lista, "+", theme(plot.margin=margin(80,10,10,10))), ncol=2)
+dev.off()
+
+
+```
+#### legend
+```{r}
+samples <- c("AML7.10", "AML9.13", "AML14.15","AML16.17" )
+
+
+figures <- function(x){
+  directory <- paste0("./results/integrated/",x,"_CD34/" )
+  data <- readRDS(paste0(directory, x,"_integrated.rds"))
+  
+  cellcolors <- cellcolors[levels(data@meta.data$projections),]
+  colors <- cellcolors$cols
+  clustercols <- DiscretePalette(length(unique(Idents(data))), palette = "alphabet2")
+  plots <- list()
+  plots$p1 <- DimPlot(data, cols = clustercols, label = F) #+ ggtitle(str_remove(x, "_CD34")) + theme(legend.position = "none", title= element_text(size = 0))
+  plots$p2 <- DimPlot(data, group.by = "projections", cols = colors, label = F) #+ theme(legend.position = "none") + ggtitle("") + xlab(NULL) + ylab(NULL)
+  plots
+}
+
+library(parallel)
+numCores <- parallel::detectCores()
+listplots <- mclapply(X = samples, FUN = figures, mc.cores = numCores)
+names(listplots) <- samples
+listplots
+plot <- listplots$AML7.10$p1
+legend <- cowplot::get_legend(listplots$AML7.10$p1)
+
+
+
+pdf(paste0(exportdir,"legend.pdf"))
+grid.newpage()
+grid.draw(legend)
+dev.off()
+
+legend <- cowplot::get_legend(listplots$AML14.15$p2)
+pdf(paste0(exportdir,"legend_Projections.pdf"), width = 12)
+grid.newpage()
+grid.draw(legend)
+dev.off()
+
+```
+
+
+
+## dx vs REL
+```{r}
+samples <- c("AML7.10", "AML9.13", "AML14.15","AML16.17" )
+
+
+figures <- function(x){
+  directory <- paste0("./results/integrated/",x,"_CD34/" )
+  data <- readRDS(paste0(directory, x,"_integrated.rds"))
+  
+  cellcolors <- cellcolors[levels(data@meta.data$projections),]
+  colors <- cellcolors$cols
+  clustercols <- DiscretePalette(length(unique(Idents(data))), palette = "alphabet2")
+  plots <- list()
+  plots$p1 <- DimPlot(data, cols = clustercols, label = F, cells = colnames(data)[which(data$orig.ident == "Dx")]) + ggtitle(str_remove(x, "_CD34")) + theme(legend.position = "none", title= element_text(size = 0))
+  plots$p2 <- DimPlot(data, cols = clustercols, label = F, cells = colnames(data)[which(data$orig.ident == "REL")]) + ggtitle(str_remove(x, "_CD34")) + theme(legend.position = "none", title= element_text(size = 0))
+  plots
+}
+
+library(parallel)
+numCores <- parallel::detectCores()
+listplots <- mclapply(X = samples, FUN = figures, mc.cores = numCores)
+names(listplots) <- samples
+
+
+lista <- list()
+for ( i in names(listplots)){
+  lista[[length(lista)+1]] <- listplots[[i]]$p1
+  lista[[length(lista)+1]] <- listplots[[i]]$p2
+}
+pdf(paste0(exportdir, "dimplotsDx_REL.pdf"), height = 25, width = 15)
+grid.arrange(grobs =lapply(lista, "+", theme(plot.margin=margin(80,10,10,10))), ncol=2)
+dev.off()
+
+
+```
+
+```{r}
+samples <- c("AML7.10", "AML9.13", "AML14.15","AML16.17" )
+
+
+figures <- function(x){
+  directory <- paste0("./results/integrated/",x,"_CD34/" )
+  data <- readRDS(paste0(directory, x,"_integrated.rds"))
+  
+  cellcolors <- cellcolors[levels(data@meta.data$projections),]
+  colors <- cellcolors$cols
+  clustercols <- DiscretePalette(length(unique(Idents(data))), palette = "glasbey")
+  plots <- list()
+  plots$p1 <- DimPlot(data, group.by = "projections", cols = colors, label = F, split.by = "orig.ident") + ggtitle(str_remove(x, "_CD34")) + theme(legend.position = "none", title= element_text(size = 0))
+  plots
+}
+
+library(parallel)
+numCores <- parallel::detectCores()
+listplots <- mclapply(X = samples, FUN = figures, mc.cores = numCores)
+names(listplots) <- samples
+
+
+lista <- list()
+for ( i in names(listplots)){
+  lista[[length(lista)+1]] <- listplots[[i]]$p1
+  #lista[[length(lista)+1]] <- listplots[[i]]$p2
+}
+pdf(paste0(exportdir, "Projections_Dx_REL.pdf"), height = 25, width = 15)
+grid.arrange(grobs =lapply(lista, "+", theme(plot.margin=margin(80,10,10,10))), ncol=1)
+dev.off()
+
+
+```
+
+```{r}
+samples <- c("AML7.10", "AML9.13", "AML14.15","AML16.17" )
+
+
+figures <- function(x){
+  directory <- paste0("./results/integrated/",x,"_CD34/" )
+  data <- readRDS(paste0(directory, x,"_integrated.rds"))
+  
+  cellcolors <- cellcolors[levels(data@meta.data$projections),]
+  colors <- cellcolors$cols
+  clustercols <- DiscretePalette(length(unique(Idents(data))), palette = "alphabet2")
+  preclustercols <- DiscretePalette(length(unique(data$orig.cluster)), palette = "glasbey")
+  plots <- list()
+  plots$p1 <- DimPlot(data,cols = clustercols, label = F) + ggtitle(str_remove(x, "_CD34")) + theme(legend.position = "none", title= element_text(size = 0))
+  plots$p2 <- DimPlot(data, group.by = "orig.cluster", label = F, cells = colnames(data)[which(data$orig.ident == "Dx")], cols = preclustercols) + ggtitle(str_remove(x, "_CD34")) + theme(legend.position = "none", title= element_text(size = 0))
+  plots$p3 <- DimPlot(data, group.by = "orig.cluster", label = F, cells = colnames(data)[which(data$orig.ident == "REL")], cols = preclustercols) + ggtitle(str_remove(x, "_CD34")) + theme(legend.position = "none", title= element_text(size = 0))
+  plots
+}
+
+library(parallel)
+numCores <- parallel::detectCores()
+listplots <- mclapply(X = samples, FUN = figures, mc.cores = numCores)
+names(listplots) <- samples
+
+
+lista <- list()
+for ( i in names(listplots)){
+  lista[[length(lista)+1]] <- listplots[[i]]$p1
+  lista[[length(lista)+1]] <- listplots[[i]]$p2
+  lista[[length(lista)+1]] <- listplots[[i]]$p3
+}
+pdf(paste0(exportdir, "Orig_clusters_Dx_REL.pdf"), height = 25, width = 20)
+grid.arrange(grobs =lapply(lista, "+", theme(plot.margin=margin(80,10,10,10))), ncol=3)
+dev.off()
+
+
+```
+
+
+```{r}
+samples <- c("AML7.10", "AML9.13", "AML14.15","AML16.17" )
+
+
+figures <- function(x){
+  directory <- paste0("./results/integrated/",x,"_CD34/" )
+  data <- readRDS(paste0(directory, x,"_integrated.rds"))
+  
+  cellcolors <- cellcolors[levels(data@meta.data$projections),]
+  colors <- cellcolors$cols
+  clustercols <- DiscretePalette(length(unique(Idents(data))), palette = "alphabet2")
+  preclustercols <- DiscretePalette(length(unique(data$orig.cluster)), palette = "glasbey")
+  plots <- list()
+  plots$p1 <- DimPlot(data,cols = c("chartreuse3", "purple"), group.by = "orig.ident", label = F, pt.size = 1.1) + ggtitle(str_remove(x, "_CD34")) + theme(legend.position = "none", title= element_text(size = 0))
+  plots
+}
+
+library(parallel)
+numCores <- parallel::detectCores()
+listplots <- mclapply(X = samples, FUN = figures, mc.cores = numCores)
+names(listplots) <- samples
+
+
+lista <- list()
+for ( i in names(listplots)){
+  lista[[length(lista)+1]] <- listplots[[i]]$p1
+  lista[[length(lista)+1]] <- listplots[[i]]$p2
+  lista[[length(lista)+1]] <- listplots[[i]]$p3
+}
+pdf(paste0(exportdir, "Dx_REL.pdf"), height = 25, width =25)
+grid.arrange(grobs =lapply(lista, "+", theme(plot.margin=margin(80,10,10,10))), ncol=2)
+#legend(legend = c("Dx", "REL"), fill = c("chartreuse3", "purple"), x = 0.5, y = "top")
+dev.off()
+
+
+```
+```{r}
+p <- DimPlot(aml.combined, group.by = "projections", cols = colors)
+legend <- cowplot::get_legend(p)
+pdf(paste0(exportdir,"legend_Projections.pdf"), width = 12)
+grid.newpage()
+grid.draw(legend)
+dev.off()
+```
+# patient data
+```{r}
+library(kableExtra)
+df <- data.table::data.table(Patient = c("AML7.10", "AML9.13", "AML14.15","AML16.17" ), Subtype = c("inv(16)","t(8;21)", "t(8;21)", "inv(16)"), 'Dx Sample' = c("AML7", "AML9", "AML14", "AML16"), 'REL Sample' = c("AML10", "AML13", "AML15", "AML17"))
+
+df %>% kableExtra::kbl() %>% 
+  kableExtra::kable_styling(bootstrap_options = "striped", full_width = F) %>% 
+  kableExtra::save_kable(file = "patient_data.png")
+
+
+
+table1 <- table(aml.combined$sample) %>%  kableExtra::kbl(col.names = c("Sample", "Cells after QC"), align = "c") %>% 
+  kableExtra::kable_styling(bootstrap_options = "striped", full_width = F)
+
+kable(df, booktabs = TRUE) %>%
+  kable_styling(font_size = 8)
+```
+

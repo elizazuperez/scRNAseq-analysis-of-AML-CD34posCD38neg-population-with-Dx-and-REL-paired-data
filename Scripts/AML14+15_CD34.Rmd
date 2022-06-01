@@ -1,0 +1,340 @@
+---
+title: "AML9+13_CD34pos"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(Seurat)
+library(patchwork)
+library(tidyverse)
+```
+
+```{r}
+Dx <- readRDS("./results/separated/AML14_CD34pos/AML14_CD34pos.rds")
+Dx@meta.data$orig.ident <- rep("Dx",nrow(Dx@meta.data))
+REL <- readRDS("./results/separated/AML15_CD34pos/AML15_CD34pos.rds")
+REL@meta.data$orig.ident <- rep("REL",nrow(REL@meta.data))
+
+data.list <- list(Dx = Dx, REL = REL)
+
+features = SelectIntegrationFeatures(object.list = data.list,
+                                     nfeatures = 3000)
+data.list <- PrepSCTIntegration(object.list = data.list, anchor.features = features)
+anchors <-  FindIntegrationAnchors(object.list = data.list, normalization.method = "SCT",
+    anchor.features = features)
+aml.combined <-  IntegrateData(anchorset = anchors, normalization.method = "SCT")
+
+aml.combined <- RunPCA(aml.combined, verbose = FALSE)
+ElbowPlot(aml.combined, ndims = 40)
+print(x = aml.combined[["pca"]], 
+      dims = 1:18, 
+      nfeatures = 5)
+dims = 14
+aml.combined <- RunUMAP(aml.combined, reduction = "pca", dims = 1:dims, verbose = F)
+ DimPlot(aml.combined, reduction = "umap", group.by = "orig.ident",)
+ 
+table(aml.combined$orig.ident, aml.combined$newcluster)
+View(table(aml.combined$orig.ident, aml.combined$projections))
+
+aml.combined$orig.cluster <- aml.combined$newcluster
+```
+
+## cluster stabillity
+```{r, eval = T}
+library(scran)
+library(BiocNeighbors)
+data.use <- Embeddings(object = aml.combined[["pca"]])
+data.use <- data.use[, 1:dims]
+
+
+myClusterFUN <- function(x, res) {
+  g <- bluster::makeSNNGraph(x,
+                             type="jaccard",
+                             k = 20,
+                             BNPARAM = AnnoyParam())
+  igraph::cluster_louvain(g, resolution = res)$membership # 0.4
+}
+
+
+res = c(0.2,0.4,0.5,0.6,0.7,0.8,1,1.2,1.4,1.6)
+
+ 
+ listcluster <- list()
+ 
+ listboot <- list()
+ set.seed(124628)
+ 
+ for (i in unique(c(res, res*2))){
+   listcluster[[as.character(i)]] <-  aml.combined@meta.data[as.character(i)] <- myClusterFUN(data.use, res = i)
+   listboot[[as.character(i)]] <- bluster::bootstrapStability(data.use,
+                                                   FUN = myClusterFUN,
+                                                   #transposed = TRUE, # TRUE reproduce el error del issue, = FALSE parece que funciona bien
+                                                   clusters = listcluster[[as.character(i)]],
+                                                   iterations = 25,
+                                                   res = i)
+  
+   print(pheatmap::pheatmap(listboot[[as.character(i)]], cluster_row=FALSE, cluster_col=FALSE, color=viridis::magma(100), breaks=seq(-1, 1, length.out=101))) 
+
+ 
+ }
+ 
+```
+
+
+
+
+
+```{r}
+
+ for (i in names(listcluster)){
+    print(pheatmap::pheatmap(listboot[[as.character(i)]], cluster_row=FALSE, cluster_col=FALSE, color=viridis::magma(100), breaks=seq(-1, 1, length.out=101))) 
+
+ }
+
+```
+
+
+
+
+```{r}
+listofres <- list()
+listofDEpercluster <- list()
+listofFirstDE <- list()
+plotlist<-list()
+# loop para encontrar los markers para cada resolución y anotar resultados en listas
+for (i in names(listcluster)){ 
+  Idents(object = aml.combined) <- as.character(i)
+  aml.combined <- RunUMAP(aml.combined, dims = 1:dims, verbose = FALSE)
+  plotlist[[as.character(i)]]<-print(DimPlot(aml.combined,
+        reduction = "umap",
+        label = TRUE,
+        label.size = 6))
+  data.markers <- FindAllMarkers(aml.combined, only.pos = T, min.pct = 0.15, logfc.threshold = 0.25)
+  df <- data.markers %>%
+    group_by(cluster) %>%
+    slice_max(n = 4, order_by = avg_log2FC)
+  listofres[[as.character(i)]] <- df
+  listofFirstDE[[as.character(i)]] <- (table(df$gene))
+  listofDEpercluster[[as.character(i)]]<-(table(data.markers$cluster))
+  }
+listofDEpercluster # cantidad de markers por cluster en diferentes resoluciones. Me quedaría con res = 1 o 0.4 por tener el mínimo número de markers en un cluster más alto
+listofFirstDE # ordenados por el pvalor, markers repetidos en diferentes clusters entre los 4 primeros. Me quedaría con res = 1 por cantidad de genes y por las pocas repeticiones o con 0.4 por el ausencia de repeticiones, aun habiendo menor número de clusters
+listofres #df con los primeros 4 genes de cada cluster. En ninguno me ha parecido ver marcadores de BM stem cell anotados en cellmarker
+# SIGO CON RES =1
+plotlist
+ 
+
+ ## Selected
+ aml.combined@meta.data$newcluster <- listcluster[["0.5"]]
+
+ Idents(object = aml.combined) <- "newcluster"
+
+# Idents(object = aml.combined) <- "SCT_snn_res.1.4"
+VlnPlot(aml.combined, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+DimPlot(aml.combined,
+        reduction = "umap",
+        label = TRUE,
+        label.size = 6)
+
+```
+
+
+# Projections
+
+```{r}
+library(openxlsx)
+aml.combined@meta.data$projections <- factor(aml.combined@meta.data$projections)
+cellcolors <- read.xlsx("veltencolors.xlsx")
+rownames(cellcolors) = cellcolors[,1]
+cellcolors <- cellcolors[levels(aml.combined@meta.data$projections),]
+
+colors <- cellcolors$cols
+
+ aml.combined@meta.data$newcluster <- listcluster[["0.5"]] 
+ table(aml.combined$newcluster, aml.combined$orig.ident)
+
+ Idents(object = aml.combined) <- "newcluster"
+
+plot1 <- DimPlot(aml.combined, reduction = "umap",  label = TRUE,
+                 group.by = "projections", label.size = 2, pt.size = 1.1, cols = colors) +
+  theme(legend.text = element_text(size = 5),
+        #legend.key.size = unit(0, "cm"),
+        legend.key.height = unit(1, "cm"))
+plot2 = DimPlot(aml.combined,
+        reduction = "umap",
+        label = TRUE,
+        label.size = 6,
+        pt.size = 1.1)
+plot1 + plot2
+
+
+
+
+metadata <- (aml.combined@meta.data)
+metadata$seurat_clusters <- factor(metadata$newcluster)
+metadata$projections <- factor(metadata$projections)
+df <- as.data.frame(matrix(ncol=length(levels(metadata$projections)), nrow=0))
+names(df) <- levels(metadata$projections)
+
+for (i in levels(metadata$seurat_clusters)) {
+  clusters <- c(table(metadata$projections[which(metadata$seurat_clusters == i)]))
+  df[i,] <- clusters
+}
+df$total <- rowSums(df)
+df[1:(ncol(df)-1)] = df/df$total
+df[df== 0] <- NA
+View(df)# proporción 
+```
+
+```{r}
+library(kableExtra)
+exportdir <- "./results/integrated/AML14.15_CD34/"
+dir.create("./results/integrated")
+dir.create(exportdir)
+DxRows <- aml.combined$orig.ident == "Dx"
+
+pdf(paste0(exportdir,"results.pdf"))
+DimPlot(aml.combined, reduction = "umap", group.by = "orig.ident", pt.size = 1)
+
+DimPlot(aml.combined, reduction = "umap", split.by = "orig.ident", pt.size = 1)
+aml.combined$orig.combined <- paste(aml.combined$orig.ident, aml.combined$orig.cluster, sep = ".")
+DimPlot(aml.combined, reduction = "umap", group.by =  "orig.combined", pt.size = 1, label = T)
+
+
+aml.combined$orig.ident <- factor(aml.combined$orig.ident)
+ DimPlot(aml.combined, reduction = "umap",  label = F,
+                 group.by = "projections", label.size = 2, pt.size = 1, cols = colors, split.by = "orig.ident") +
+  theme(legend.text = element_text(size = 8),
+        #legend.key.size = unit(0, "cm"),
+        legend.key.height = unit(1, "cm"),
+        legend.position = "none")
+
+
+
+plot1 <-DimPlot(aml.combined, reduction = "umap", 
+        #split.by = "orig.ident", 
+        cells = colnames(aml.combined)[DxRows],
+        pt.size = 1)
+plot2 = DimPlot(aml.combined, reduction = "umap", 
+        group.by = "orig.cluster", 
+        cells = colnames(aml.combined)[DxRows],
+        pt.size = 1)
+plot1 + plot2
+
+
+plot1 <-DimPlot(aml.combined, reduction = "umap", 
+        #split.by = "orig.ident", 
+        cells = colnames(aml.combined)[!DxRows],
+        pt.size = 1)
+plot2 = DimPlot(aml.combined, reduction = "umap", 
+        group.by = "orig.cluster", 
+        cells = colnames(aml.combined)[!DxRows],
+        pt.size = 1)
+plot1 + plot2
+dev.off()
+
+
+print(table(aml.combined$projections, aml.combined$orig.ident)) 
+table(aml.combined$newcluster, aml.combined$orig.ident) 
+table(NewCluster = aml.combined$newcluster[DxRows], Dx_OldCluster = aml.combined$orig.cluster[DxRows] )
+table(NewCluster = aml.combined$newcluster[!DxRows], REL_OldCluster = aml.combined$orig.cluster[!DxRows] )
+
+
+```
+
+
+# Enrichment
+
+```{r}
+data.markers <- FindAllMarkers(aml.combined, only.pos = T, min.pct = 0.25, logfc.threshold = 0.25)
+top100 <- data.markers %>% group_by(cluster) %>% top_n(n = 100, wt = avg_log2FC) # Visto en algún tutorial y foro, me quedo con los primeros 100 genes
+top100pval <- subset(top100, rowSums(top100[5] < 0.05) > 0)
+
+library("clusterProfiler")
+library("org.Hs.eg.db")
+library("AnnotationHub")
+df <- top100pval[,7:6]
+dfsample <- split(df$gene,df$cluster)
+length(dfsample) 
+
+
+
+genelist = list()
+for (i in 1:length(dfsample)){
+  dfsample[[i]] <- bitr(dfsample[[i]], fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db")
+  genelist[[i]] <- dfsample[[i]]$ENTREZID
+}
+names(genelist)=names(dfsample)
+
+GOclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichGO", OrgDb = "org.Hs.eg.db")
+dotplot(GOclusterplot)
+View(GOclusterplot@compareClusterResult)
+
+KEGGclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichKEGG")
+dotplot(KEGGclusterplot)
+View(KEGGclusterplot@compareClusterResult)
+
+ library(ReactomePA)
+PAclusterplot <- compareCluster(geneCluster = genelist, fun = "enrichPathway")
+dotplot(PAclusterplot)
+View(PAclusterplot@compareClusterResult)
+
+
+
+```
+
+
+
+
+```{r}
+LSC17 <- list(c("GPR56", "AKR1C3", "CD34", "NGRFAP1", "SMIM24", "SOCS2", "CPXM1", "CDK6", "KIAA0125", "DPYSL3", "MMRN1", "LAPTM4B", "ARHGAP22", "NYNRIN", "ZBTB46", "DNMT3B"))
+aml.combined <-  AddModuleScore(aml.combined, features = LSC17, name = "LSC17")
+library(RColorBrewer)
+
+FeaturePlot(aml.combined,
+            features = "CD274", label = TRUE, repel = TRUE) +
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+
+
+
+LSC_signature <- list(c("FSHD4","CD34","ADGRG1","SOCS2","SPINK2","FAM30A"))
+filtered_data <- aml.combined@assays$SCT@scale.data[which(rownames(aml.combined@assays$SCT@scale.data)%in%unlist(LSC_signature)),]
+rownames(filtered_data)
+Elsayed_model <- function(x){
+  x[1]*0.0171 + x[2]*0.109 + x[3]*0.141 + x[4]*0.0516 + x[5]*0.054# + x[6]*0.189
+  }
+cells_scores <- apply(filtered_data,2,function(x)Elsayed_model(x))
+aml.combined <- AddMetaData(object = aml.combined, metadata = cells_scores, col.name = "Elsayed_LSC_score")
+VlnPlot(aml.combined,features = "Elsayed_LSC_score") + geom_boxplot()
+aml.combined$Elsayed_LSC_score
+
+FeaturePlot(aml.combined,features = "Elsayed_LSC_score", pt.size = 1.3)
+df1 <- data.frame(clusters=Idents(aml.combined),Elsayed_LSC_score=aml.combined$Elsayed_LSC_score)
+df2 <- df1 %>% group_by(clusters) %>% summarise(median=median(Elsayed_LSC_score))
+quantiles <- quantile(df2$median,probs = seq(0, 1, 0.1))
+ggplot(df1,aes(x=fct_reorder(clusters, Elsayed_LSC_score, .fun = median, .desc = TRUE),y=Elsayed_LSC_score, fill=clusters)) +
+  geom_boxplot(outlier.shape = NA) +
+  theme_classic() +
+  NoLegend() +
+  coord_cartesian(ylim=c(-0.1,3)) +
+  geom_hline(yintercept = quantiles[10], linetype="dashed")
+
+```
+# Export
+```{r}
+exportdir <- "./results/integrated/AML14.15_CD34/"
+dir.create("./results/integrated")
+dir.create(exportdir)
+saveRDS(aml.combined, paste0(exportdir, "AML14.15_integrated.rds"))
+enrichlist <- list(GO = GOclusterplot@compareClusterResult,
+                   KEGG = KEGGclusterplot@compareClusterResult,
+                   Reactome = PAclusterplot@compareClusterResult)
+library(openxlsx)
+write.xlsx(enrichlist, paste0(exportdir,"enrichment.xlsx"))
+```
+
