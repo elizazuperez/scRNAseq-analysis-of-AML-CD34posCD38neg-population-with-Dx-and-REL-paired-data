@@ -9,3 +9,4 @@ Note that these are not meant to be knitted, and that the code will be tidied up
 * `Veltencolors.Rmd` was created to assign to each projected cell type a randomly generated color to be used throughout the project.
 * `Analysis.Rmd` is created for the analysis of the full data integration.
 * `Figures.Rmd` was used to create most plots and figures to be included in the TPM from sample data and patient paired data
+ 
